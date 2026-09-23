@@ -1,0 +1,16 @@
+# secrets
+.env
+
+# python
+.venv/
+__pycache__/
+*.pyc
+
+# runtime output
+data/
+out/
+sessions/
+
+instructions/
+PLAN.md
+
