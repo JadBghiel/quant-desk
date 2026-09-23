@@ -1,0 +1,15 @@
+# tiny local model for now, cloud model picked in #2
+model: qwen3:1.7b
+
+ollama:
+  # always the local daemon, -cloud models go through it too after `ollama signin`
+  host: http://localhost:11434
+  timeout: 120
+
+paths:
+  data: data
+  out: out
+  sessions: sessions
+
+# filled in #5
+mcp_servers: []
