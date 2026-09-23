@@ -4,7 +4,9 @@ import argparse
 import sys
 
 from sensai import __version__
+from sensai.chat import Session, repl
 from sensai.config import ConfigError, load_config
+from sensai.ollama import OllamaClient, OllamaError
 
 
 def parse_args(argv=None):
@@ -20,12 +22,16 @@ def main(argv=None):
     args = parse_args(argv)
     try:
         cfg = load_config(args.config, model=args.model, host=args.host)
-    except ConfigError as e:
+        client = OllamaClient(cfg["ollama"]["host"], cfg["ollama"].get("timeout", 120))
+        # fail at startup not on the 1st prompt
+        client.check_auth()
+        client.check_model(cfg["model"])
+    except (ConfigError, OllamaError) as e:
         print(f"sensai: {e}", file=sys.stderr)
         return 1
-    # chat loop lands in #2
-    print(f"model: {cfg['model']}")
-    print(f"host:  {cfg['ollama']['host']}")
+    except KeyboardInterrupt:
+        return 130
+    repl(Session(client, cfg["model"], cfg.get("system_prompt"), cfg.get("show_thinking", True)))
     return 0
 
 
