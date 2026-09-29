@@ -6,11 +6,13 @@
 __pycache__/
 *.pyc
 
-# runtime output
-data/
-out/
-sessions/
+# runtime output, anchored to the root so sensai/data/ (code) isnt ignored
+/data/
+/out/
+/sessions/
 
 instructions/
 PLAN.md
 
+# tests stay local
+/tests/
