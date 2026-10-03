@@ -6,7 +6,7 @@ ollama:
   host: https://ollama.com
   timeout: 120
 
-# optional, #3 adds the user profile on top
+# optional, today's date and the user profile (~/.sensai/profile.yaml) are added after it
 system_prompt: >-
   You are sensai, a research assistant for quantitative developers and researchers.
   Answer precisely and say when you are unsure.
@@ -14,10 +14,10 @@ system_prompt: >-
 # reasoning models think for a few seconds 1st, shown dim so the stream is visible. /think toggles it
 show_thinking: true
 
+# profile + sessions live in ~/.sensai (or $SENSAI_HOME), not here
 paths:
   data: data
   out: out
-  sessions: sessions
 
 # filled in #5
 mcp_servers: []
