@@ -1,77 +1,85 @@
-"""chat session + repl, the base loop every later feature plugs into"""
+"""chat session: history, system msg, persistence, 1 question -> 1 streamed answer"""
 
 import sys
-import threading
-import time
+from datetime import date, datetime
 
-from sensai.ollama import OllamaError
-
-HELP = """cmds:
-  /model          show the current model and the available ones
-  /model <name>   switch model, history is kept
-  /clear          empty the history
-  /think          show or hide the model's thinking
-  /help           this list
-  /exit           quit (Ctrl+D works too)
-Ctrl+C during an answer stops it"""
+from sensai import profile as prof
+from sensai.ui import DIM, RESET, Spinner
 
 
-DIM, RESET, CLEAR_LINE = "\033[2m", "\033[0m", "\r\033[K"
-FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+def build_system(base, profile, today=None):
+    """cfg prompt + today's date + the profile block, rebuilt on every start, resume and profile change"""
+    today = today or date.today()
+    parts = [base] if base else []
+    parts.append(f"Today is {today:%A %Y-%m-%d}.")
+    about = prof.render(profile)
+    if about:
+        parts.append(about)
+    return "\n\n".join(parts)
 
 
-class Spinner:
-    """animated "thinking 1.2s" line, redrawn by a thread until stop() wipes it
-
-    stop() joins the thread so nothing it writes can land in the middle of the answer
-    """
-
-    def __init__(self, out, interval=0.1):
-        self.out = out
-        self.interval = interval
-        self._stop = threading.Event()
-        self._thread = None
-
-    def start(self):
-        t0 = time.monotonic()
-
-        def run():
-            i = 0
-            while not self._stop.is_set():
-                self.out.write(f"{CLEAR_LINE}{DIM}{FRAMES[i % len(FRAMES)]} thinking {time.monotonic() - t0:.1f}s{RESET}")
-                self.out.flush()
-                i += 1
-                self._stop.wait(self.interval)
-
-        self._thread = threading.Thread(target=run, daemon=True)
-        self._thread.start()
-        return self
-
-    @property
-    def running(self):
-        return self._thread is not None
-
-    def stop(self):
-        if self._thread is None:
-            return
-        self._stop.set()
-        self._thread.join()
-        self._thread = None
-        self.out.write(CLEAR_LINE)
-        self.out.flush()
+def _now():
+    return datetime.now().isoformat(timespec="seconds")
 
 
 class Session:
-    def __init__(self, client, model, system_prompt=None, show_thinking=True):
+    def __init__(self, client, model, system_prompt=None, show_thinking=True, store=None,
+                 profile=None, profile_path=None):
         self.client = client
         self.model = model
         self.system_prompt = system_prompt
         self.show_thinking = show_thinking
+        self.store = store
+        self.profile = profile or {}
+        self.profile_path = profile_path
         self.messages = []
         self.clear()
 
+    # --- history + persistence
+
+    def system_text(self):
+        return build_system(self.system_prompt, self.profile)
+
+    def turns(self):
+        return [m for m in self.messages if m["role"] != "system"]
+
+    def set_system(self):
+        """rebuild messages[0], called when the profile changes mid session"""
+        self.messages = [{"role": "system", "content": self.system_text()}, *self.turns()]
+
+    def set_profile(self, p):
+        self.profile = p or {}
+        self.set_system()
+
     def clear(self):
-        self.messages = [{"role": "system", "content": self.system_prompt}] if self.system_prompt else []
+        """new session w/ a new id, the previous one stays on disk"""
+        self.id = self.store.new_id() if self.store else None
+        self.title = None
+        self.created = _now()
+        self.messages = [{"role": "system", "content": self.system_text()}]
+
+    def load_record(self, record):
+        """resume a saved session, system msg rebuilt fresh not taken from the file"""
+        self.id = record["id"]
+        self.title = record.get("title")
+        self.created = record.get("created", _now())
+        self.messages = [{"role": "system", "content": self.system_text()},
+                         *[m for m in record["messages"] if m.get("role") in ("user", "assistant")]]
+
+    def record(self):
+        return {"id": self.id, "title": self.title, "created": self.created, "updated": _now(),
+                "model": self.model, "messages": self.turns()}
+
+    def save(self):
+        """a failed save is a warning, the chat goes on"""
+        if not self.store or not self.turns():
+            return
+        try:
+            self.store.save(self.record())
+        except OSError as e:
+            print(f"\n[warning] session not saved: {e}")
+
+    # --- 1 question -> 1 streamed answer
 
     def ask(self, text, out=sys.stdout):
         """streams the answer to out, the turn only stays in the history if the answer completed
@@ -111,58 +119,7 @@ class Session:
             raise
         answer = "".join(parts)
         self.messages.append({"role": "assistant", "content": answer})
+        if self.title is None:
+            self.title = " ".join(text.split())[:60]
+        self.save()
         return answer
-
-
-def repl(session):
-    print(f"sensai, model {session.model}. /help for cmds")
-    while True:
-        try:
-            text = input("\n> ").strip()
-        except (EOFError, KeyboardInterrupt):
-            print()
-            return
-        if not text:
-            print("empty input, type a question or /help")
-            continue
-        if text.startswith("/"):
-            if handle_cmd(session, text):
-                return
-            continue
-        try:
-            session.ask(text)
-            print()
-        except KeyboardInterrupt:
-            print("\n[interrupted]")
-        except OllamaError as e:
-            print(f"\n[error] {e}")
-
-
-def handle_cmd(session, text):
-    """returns True when the repl should stop"""
-    cmd, _, arg = text.partition(" ")
-    arg = arg.strip()
-    if cmd == "/exit":
-        return True
-    if cmd == "/help":
-        print(HELP)
-    elif cmd == "/clear":
-        session.clear()
-        print("history cleared")
-    elif cmd == "/think":
-        session.show_thinking = not session.show_thinking
-        print(f"thinking {'shown' if session.show_thinking else 'hidden'}")
-    elif cmd == "/model":
-        try:
-            if not arg:
-                print(f"current: {session.model}")
-                print("available: " + ", ".join(session.client.list_models()))
-            else:
-                session.client.check_model(arg)
-                session.model = arg
-                print(f"switched to {arg}, history kept")
-        except OllamaError as e:
-            print(f"[error] {e}")
-    else:
-        print(f"unknown cmd {cmd}, /help for the list")
-    return False
