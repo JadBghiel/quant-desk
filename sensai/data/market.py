@@ -91,7 +91,10 @@ def get_prices(ticker, start=None, end=None, interval="1d", today=None):
 
     # past ranges cant change, anything touching today is refreshed hourly
     ttl = FOREVER if end_d < today else 3600
-    rows, meta = cached("prices", [ticker, start_d.isoformat(), end_d.isoformat(), interval], ttl, fetch)
+    # a window ending today moves every day: its fallback (no dates) serves yesterday's bars if yahoo fails
+    fallback = ["to_today", ticker, (end_d - start_d).days, interval] if end_d == today else None
+    rows, meta = cached("prices", [ticker, start_d.isoformat(), end_d.isoformat(), interval], ttl, fetch,
+                        fallback_key=fallback)
 
     path = sub_dir("prices") / f"{ticker}_{interval}_{start_d}_{end_d}.csv"
     with path.open("w", newline="", encoding="utf-8") as f:
