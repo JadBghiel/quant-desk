@@ -22,6 +22,7 @@ cp .env.example .env
 # then set in .env:
 #   OLLAMA_API_KEY        https://ollama.com/settings/keys
 #   MASSIVE_API_KEY       https://massive.com (free, for news and sentiment)
+#   TAVILY_API_KEY        https://tavily.com (free, 1000 web searches a month)
 ```
 
 `requirements.txt` includes [uv](https://docs.astral.sh/uv/), which sensai uses to launch the
@@ -155,12 +156,13 @@ NVDA, AMD, TSM; Focus: NVDA earnings
 
 ### Market data and tool calling (T1)
 
-`/tools` lists what the model can call, from our server and the official `fetch` server:
+`/tools` lists what the model can call, from our 2 servers and the official `fetch` server:
 
 ```
 > /tools
 quant-data: get_prices, get_fundamentals, get_news, get_sentiment
 fetch: fetch
+web: web_search
 ```
 
 The model decides which tools it needs, and each call shows as one line:
@@ -209,6 +211,33 @@ A failed call is shown in red and handed back to the model, which explains it:
 I cannot find the P/E ratio for ZZZQX as there are no fundamental data available for this ticker. ...
 ```
 
+Company names come from a tool, not from the model's memory:
+
+```
+> what company is GFS and how did it do over the last 30 days?
+⚙ get_fundamentals(ticker=GFS)  1.7s ✓
+⚙ get_prices(start=2026-09-12, ticker=GFS)  0.0s ✓
+GFS is GLOBALFOUNDRIES Inc., a company in the Technology sector and Semiconductors industry.
+Over the last 30 days (from 2026-09-14 to 2026-10-09), the stock returned +11.07% ...
+```
+
+What no tool covers goes to web search, with the sources cited:
+
+```
+> what did the fed decide at its last meeting?
+⚙ web_search(query=FOMC meeting decision October 2026, topic=finance)  1.7s ✓
+At its last meeting in September 2026, the Federal Open Market Committee (FOMC) unanimously decided to raise
+interest rates to respond to persistent inflation. ...
+Source: https://www.wsj.com/economy/central-banking/fed-minutes-signal-further-rate-increase-this-year-but-no-urgency-for-october-hike-54ec759f
+
+> what is the implied volatility of NVDA options expiring next month?
+⚙ web_search(query=NVDA options implied volatility November 2026, topic=finance)  2.7s ✓
+I cannot provide a single implied volatility (IV) for all NVDA options expiring next month because IV varies
+by strike price and option type (calls vs puts).
+However, based on a Yahoo Finance snapshot for the November 13, 2026, 150.00 call option, the implied
+volatility was 80.37% as of the close on October 9, 2026. ...
+```
+
 `fetch` reads any web page:
 
 ```
@@ -226,6 +255,9 @@ It is headquartered in Santa Clara, California.
 | `what is the news sentiment on NVDA over the last 7 days, and why?` | `get_sentiment` (and maybe `get_news`), a label, a score and the reasons |
 | `what is the P/E of ZZZQX?` | a red `✗ no fundamentals for ZZZQX` line, then the model says the ticker is unknown |
 | `read https://en.wikipedia.org/wiki/Nvidia and tell me where it is headquartered` | a `fetch` line, then "Santa Clara, California" |
+| `what did the fed decide at its last meeting?` | a `web_search` line, then the decision and the source URL |
+| `what is the implied volatility of NVDA options expiring next month?` | no tool covers options, so a `web_search` line, then what the sources say |
+| `what company is GFS?` | a `get_fundamentals` line, then GLOBALFOUNDRIES, not a guess |
 | `how did my watchlist do this month?` | one `get_prices` per ticker of your profile, without naming them |
 | `/exit`, then `python -m sensai --resume`, then `and what about AMD?` | the conversation goes on, with the data fetched before |
 
@@ -271,15 +303,41 @@ to several rounds of calls, up to `max_tool_rounds` (6 by default), after which 
 with what it has. Tool calls and their results are saved with the session, so after `--resume` the
 model still has the data it fetched.
 
-sensai starts every server listed under `mcp_servers` in `config.yaml`. Two are set up:
+sensai starts every server listed under `mcp_servers` in `config.yaml`. Three are set up:
 
 | Server | Tools | What for |
 |---|---|---|
 | `quant-data` (ours, `sensai/servers/quant_data.py`) | `get_prices`, `get_fundamentals`, `get_news`, `get_sentiment` | Market data, see below |
 | [`fetch`](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch) (official) | `fetch` | Reads a web page as Markdown, e.g. the full article behind a headline. It respects `robots.txt`, so some news sites refuse it |
+| `web` (ours, `sensai/servers/web.py`) | `web_search` | Live web search, see [Web search](#web-search-t3) |
 
 A server that fails to start is a warning, not a crash: the other tools still work. Servers' own
 logs go to `~/.sensai/logs/`, never into the chat.
+
+**The model knows what its tools can't do.** Tool descriptions say what each tool does, not what
+it doesn't cover, so a model tends to fill the gaps from memory (it once called GFS "Global
+Payments"; GFS is GlobalFoundries). Each server declares its limits in its MCP `instructions`
+(for a server we don't control, like `fetch`, in `config.yaml` under `limits:`), and sensai adds
+them to the system prompt with a few rules: names and numbers come from tools, a failed tool is
+reported, and what no tool covers goes to web search instead of being guessed.
+
+### Web search (T3)
+
+`web_search` runs a live query through [Tavily](https://tavily.com) and returns, for each result,
+its title, URL, publish date when known, and a short snippet. The model uses it for what the market
+tools don't cover (options, macro data, recent announcements, non-US news) or when a data tool
+fails, cites the URLs it used, and can open a result with `fetch` to read the full page.
+
+| Argument | Description |
+|---|---|
+| `query` | A short search engine query |
+| `topic` | `general` (default), `news` (recent articles, with dates) or `finance` |
+| `days` | Only results from the last N days |
+| `max_results` | 1 to 10, default 5 |
+
+Searches are cached for an hour, and each snippet is capped at 500 characters so a search can't
+fill the context. Tavily can also write an answer with its own LLM; sensai never asks for it, since
+every model call must go through Ollama: the model reads the sources and writes the answer itself.
 
 ### Market data tools (our MCP server)
 
@@ -329,7 +387,7 @@ can never be committed by mistake:
 ├── profile.yaml
 ├── sessions/
 │   └── 20260928-143012.json    one file per session, named after its start time
-└── logs/                       MCP servers' logs (quant-data.log, fetch.log, mcp.log)
+└── logs/                       MCP servers' logs (quant-data.log, fetch.log, web.log, mcp.log)
 ```
 
 The folder is only readable by your user. Set `SENSAI_HOME` to use another folder, for instance a
@@ -347,11 +405,11 @@ the folder.
 | `ollama.timeout` | Seconds to wait for data before giving up (`120`) |
 | `system_prompt` | Base instructions; today's date and your profile are added after it |
 | `show_thinking` | Whether reasoning models' thinking is shown by default (`true`) |
-| `mcp_servers` | MCP servers to start: `name`, `command`, `args`, optional `env`, `cwd`, `enabled: false` to skip one. `python` means the Python running sensai |
+| `mcp_servers` | MCP servers to start: `name`, `command`, `args`, optional `env`, `cwd`, `limits` (what its tools can't do, for servers that don't declare it), `enabled: false` to skip one. `python` means the Python running sensai |
 | `max_tool_rounds` | Rounds of tool calls per question before the model must answer (`6`) |
 
-`.env` holds the secrets: `OLLAMA_API_KEY` (required) and `MASSIVE_API_KEY` (for news and
-sentiment). Set `SENSAI_DATA` to store market data somewhere other than `data/`.
+`.env` holds the secrets: `OLLAMA_API_KEY` (required), `MASSIVE_API_KEY` (for news and
+sentiment) and `TAVILY_API_KEY` (for web search). Set `SENSAI_DATA` to store market data somewhere other than `data/`.
 
 ## Models
 
@@ -377,6 +435,8 @@ every week. Some models listed by `/model` are paid only.
 | `MASSIVE_API_KEY is missing` | Get a free key at massive.com and add it to `.env` |
 | `massive rate limit (5 calls/min on the free plan)` | Wait a minute; cached news keeps working meanwhile |
 | `massive refused the key` | Check `MASSIVE_API_KEY` in `.env` |
+| `TAVILY_API_KEY is missing` | Get a free key at tavily.com and add it to `.env`; the other tools work without it |
+| `tavily monthly limit reached` | The free plan's 1000 searches are used up; it resets on the 1st of the month |
 | `[warning] mcp server X didnt start: ...` | Check the server's `command` in `config.yaml` (and that `uv` is installed for `fetch`); the other tools still work. Details in `~/.sensai/logs/X.log` |
 | `✗ ...` after a tool call | The tool failed; the model got the error and explains it. Nothing to do unless it keeps happening |
 | `no price data for X, check the ticker` | The symbol is unknown to Yahoo Finance (e.g. a typo) |
@@ -405,3 +465,4 @@ folders instead of your real `~/.sensai` and `data/`.
 | [#7](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/7) | T2 sandboxed code execution | Planned |
 | [#8](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/8) | M4 research note | Planned |
 | [#9](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/9) | EV1 number checking and evaluation | Planned |
+| [#17](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/17) | T3 web search and tool limits | Done |
