@@ -24,7 +24,7 @@ SCORES = {"positive": 1.0, "neutral": 0.0, "negative": -1.0}
 
 
 def label_for(score):
-    """mean of the 1 / 0 / -1 scores -> a label, same bands as the old alpha vantage ones"""
+    """mean of the 1 / 0 / -1 scores -> a label, Neutral between -0.15 and 0.15"""
     if score is None:
         return None
     if score <= -0.35:
