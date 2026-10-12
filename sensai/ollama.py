@@ -92,14 +92,17 @@ class OllamaClient:
         hint = f", closest: {', '.join(close)}" if close else ""
         raise ModelNotFound(f"model {model} not available on {self.host}{hint} (/model to list them)")
 
-    def chat_stream(self, model, messages):
-        """yields (kind, text) chunk by chunk, kind is "thinking" or "content"
+    def chat_stream(self, model, messages, tools=None):
+        """yields (kind, value) chunk by chunk, kind is "thinking", "content" or "tool_call"
 
         reasoning models (gpt-oss...) think for seconds before the 1st content token,
-        so the thinking is streamed too or the answer looks like 1 block after a pause
+        so the thinking is streamed too or the answer looks like 1 block after a pause.
+        a tool call comes as 1 complete chunk: {"id", "function": {"name", "arguments": {...}}}
         """
-        r = self._request("POST", "/api/chat", json={"model": model, "messages": messages, "stream": True},
-                          stream=True)
+        body = {"model": model, "messages": messages, "stream": True}
+        if tools:
+            body["tools"] = tools
+        r = self._request("POST", "/api/chat", json=body, stream=True)
         try:
             for line in r.iter_lines():
                 if not line:
@@ -112,6 +115,8 @@ class OllamaClient:
                     yield "thinking", msg["thinking"]
                 if msg.get("content"):
                     yield "content", msg["content"]
+                for call in msg.get("tool_calls") or []:
+                    yield "tool_call", call
                 if data.get("done"):
                     return
         except (requests.ConnectionError, requests.exceptions.ChunkedEncodingError):
