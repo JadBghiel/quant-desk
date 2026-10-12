@@ -62,10 +62,11 @@ def get_fundamentals(ticker: str) -> dict:
 
 @server.tool()
 def get_news(ticker: str, days: int = 7, limit: int = 10) -> dict:
-    """Recent news articles about a ticker, most relevant first, from Alpha Vantage.
+    """Recent news articles about a ticker, from Massive (ex Polygon.io).
 
-    Each article has its time, title, source, url, a short summary, and the sentiment of the
-    article towards this ticker (score from -1 bearish to 1 bullish, label, relevance 0 to 1).
+    Articles scored for this ticker come first, then the ones about fewer companies, then the
+    newest. Each has its time (UTC), title, source, url, a short summary, and its sentiment
+    towards this ticker (positive / neutral / negative, score 1 / 0 / -1) with the reason.
 
     Args:
         ticker: Stock symbol, e.g. NVDA.
@@ -77,11 +78,12 @@ def get_news(ticker: str, days: int = 7, limit: int = 10) -> dict:
 
 @server.tool()
 def get_sentiment(ticker: str, days: int = 30) -> dict:
-    """News sentiment for a ticker over the last days, from Alpha Vantage.
+    """News sentiment for a ticker over the last days, from Massive (ex Polygon.io).
 
-    Returns the number of articles, the relevance-weighted mean sentiment score (-1 bearish to
-    1 bullish) and its label, the count of articles per label, and the path of a CSV file with
-    the daily series (columns: date, n_articles, mean_score).
+    Each article's sentiment towards the ticker is scored positive 1, neutral 0, negative -1.
+    Returns the number of articles and of scored ones, the mean score (-1 bearish to 1 bullish)
+    and its label, the count per sentiment, and the path of a CSV file with the daily series
+    (columns: date, n_articles, mean_score).
 
     Args:
         ticker: Stock symbol, e.g. NVDA.

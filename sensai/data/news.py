@@ -1,8 +1,9 @@
-"""news + sentiment from alpha vantage NEWS_SENTIMENT
+"""news + sentiment from massive (ex polygon.io) /v2/reference/news
 
-free tier = 25 calls/day. 1 call fetches a whole window (30 days min, 1000 articles max)
-for a ticker and is cached 6h, get_news and get_sentiment both filter that same call
-so 1 ticker = 1 call a day in practice
+free basic plan = 5 calls/min, 2 years of history, 1000 articles per call. 1 call fetches a whole
+window (30 days min) for a ticker and is cached 6h, get_news and get_sentiment both filter that
+same call. each article has per ticker insights: sentiment (positive / neutral / negative) + a
+sentence saying why, mapped to 1 / 0 / -1 so a mean can be taken
 """
 
 import csv
@@ -16,10 +17,14 @@ import requests
 from sensai.data import DataError, sub_dir
 from sensai.data.cache import cached
 
-URL = "https://www.alphavantage.co/query"
+URL = "https://api.massive.com/v2/reference/news"
 MIN_WINDOW_DAYS = 30
+MAX_ARTICLES = 1000
+SCORES = {"positive": 1.0, "neutral": 0.0, "negative": -1.0}
+
+
 def label_for(score):
-    """alpha vantage's own thresholds for ticker_sentiment_score"""
+    """mean of the 1 / 0 / -1 scores -> a label, same bands as the old alpha vantage ones"""
     if score is None:
         return None
     if score <= -0.35:
@@ -34,56 +39,60 @@ def label_for(score):
 
 
 def _key():
-    key = os.environ.get("ALPHAVANTAGE_API_KEY", "").strip()
+    key = os.environ.get("MASSIVE_API_KEY", "").strip()
     if not key:
-        raise DataError("ALPHAVANTAGE_API_KEY is missing, get a free key at "
-                        "https://www.alphavantage.co/support/#api-key and put it in .env")
+        raise DataError("MASSIVE_API_KEY is missing, get a free key at https://massive.com "
+                        "and put it in .env")
     return key
 
 
-def _parse_time(s):
-    return datetime.strptime(s, "%Y%m%dT%H%M%S")
+def _error(r):
+    try:
+        data = r.json()
+        return data.get("error") or data.get("message") or r.reason
+    except ValueError:
+        return r.text.strip()[:200] or r.reason
 
 
 def _fetch(ticker, window, now):
-    """1 alpha vantage call -> compact articles w/ this ticker's own sentiment, newest 1st"""
-    params = {"function": "NEWS_SENTIMENT", "tickers": ticker, "sort": "LATEST", "limit": 1000,
-              "time_from": (now - timedelta(days=window)).strftime("%Y%m%dT%H%M"), "apikey": _key()}
+    """1 massive call -> compact articles w/ this ticker's own sentiment, newest 1st"""
+    params = {"ticker": ticker, "published_utc.gte": (now - timedelta(days=window)).strftime("%Y-%m-%d"),
+              "order": "desc", "sort": "published_utc", "limit": MAX_ARTICLES, "apiKey": _key()}
     try:
         r = requests.get(URL, params=params, timeout=(10, 30))
-        r.raise_for_status()
-        data = r.json()
     except requests.RequestException as e:
-        raise DataError(f"alpha vantage unreachable: {type(e).__name__}") from None
+        raise DataError(f"massive unreachable: {type(e).__name__}") from None
+    if r.status_code in (401, 403):
+        raise DataError(f"massive refused the key, check MASSIVE_API_KEY in .env ({_error(r)})")
+    if r.status_code == 429:
+        raise DataError("massive rate limit (5 calls/min on the free plan), retry in a minute")
+    if not r.ok:
+        raise DataError(f"massive error {r.status_code}: {_error(r)}")
+    try:
+        data = r.json()
     except ValueError:
-        raise DataError("alpha vantage sent something that isnt json") from None
-    # limits and errors come back as a 200 w/ 1 text field
-    msg = data.get("Information") or data.get("Note") or data.get("Error Message")
-    if msg and "feed" not in data:
-        if "rate limit" in msg.lower() or "requests per day" in msg.lower():
-            raise DataError("alpha vantage daily limit (25 calls) reached, cached data only until tomorrow")
-        if "no articles" in msg.lower():
-            return []
-        raise DataError(f"alpha vantage: {msg}")
-    feed = data.get("feed", [])
+        raise DataError("massive sent something that isnt json") from None
+    items = data.get("results") or []
     articles = []
-    for item in feed:
-        mine = next((t for t in item.get("ticker_sentiment", []) if t.get("ticker") == ticker), None)
-        if mine is None:
-            continue
+    for item in items:
+        mine = next((i for i in item.get("insights") or [] if i.get("ticker") == ticker), None)
+        sentiment = (mine or {}).get("sentiment")
         articles.append({
-            "time": _parse_time(item["time_published"]).isoformat(),
+            # "2026-10-09T14:03:00Z" -> naive utc, same format as the rest of the data layer
+            "time": item.get("published_utc", "").rstrip("Z")[:19],
             "title": item.get("title", ""),
-            "source": item.get("source", ""),
-            "url": item.get("url", ""),
-            "summary": item.get("summary", ""),
-            "score": round(float(mine["ticker_sentiment_score"]), 4),
-            "label": mine.get("ticker_sentiment_label") or label_for(float(mine["ticker_sentiment_score"])),
-            "relevance": round(float(mine["relevance_score"]), 4),
+            "source": (item.get("publisher") or {}).get("name", ""),
+            "url": item.get("article_url", ""),
+            "summary": item.get("description") or "",
+            # no insight for this ticker -> the article mentions it but isnt scored
+            "sentiment": sentiment,
+            "score": SCORES.get(sentiment),
+            "reason": (mine or {}).get("sentiment_reasoning") or "",
+            "n_tickers": len(item.get("tickers") or []),
         })
     articles.sort(key=lambda a: a["time"], reverse=True)
-    # sorted LATEST + 1000 cap: a full feed means the oldest days of the window were cut
-    return {"articles": articles, "truncated": len(feed) >= 1000}
+    # newest 1st + 1000 cap: a next page means the oldest days of the window were cut
+    return {"articles": articles, "truncated": bool(data.get("next_url")) or len(items) >= MAX_ARTICLES}
 
 
 def _articles(ticker, days, now=None):
@@ -92,10 +101,10 @@ def _articles(ticker, days, now=None):
     if not 1 <= days <= 365:
         raise DataError("days must be between 1 and 365")
     window = max(MIN_WINDOW_DAYS, days)
-    # keyed on the day so the window moves forward, 6h so the same day gets fresh news
-    # "v2": the cached value changed shape (articles + truncated flag)
-    got, meta = cached("news", ["v2", ticker, window, now.date().isoformat()], 6 * 3600,
-                       lambda: _fetch(ticker, window, now))
+    # keyed on the day so the window moves forward, 6h so the same day gets fresh news.
+    # the fallback key has no date: if massive fails, yesterday's news is served as stale
+    got, meta = cached("news", ["v3", ticker, window, now.date().isoformat()], 6 * 3600,
+                       lambda: _fetch(ticker, window, now), fallback_key=["v3", ticker, window])
     since = (now - timedelta(days=days)).isoformat()
     articles = [a for a in got["articles"] if a["time"] >= since]
     covered_from = min((a["time"][:10] for a in articles), default=None)
@@ -103,8 +112,8 @@ def _articles(ticker, days, now=None):
     cut = got["truncated"] and covered_from is not None and covered_from > since[:10]
     coverage = {"covered_from": covered_from, "truncated": bool(cut)}
     if cut:
-        coverage["warning"] = (f"alpha vantage caps a call at 1000 articles, so only {covered_from} onwards is "
-                               f"covered, not the full {days} days. ask for fewer days for full coverage")
+        coverage["warning"] = (f"massive caps a call at {MAX_ARTICLES} articles, so only {covered_from} onwards "
+                               f"is covered, not the full {days} days. ask for fewer days for full coverage")
     return articles, meta, since[:10], coverage
 
 
@@ -123,15 +132,17 @@ def get_news(ticker, days=7, limit=10, now=None):
     articles, meta, since, coverage = _articles(ticker, days, now)
     path = sub_dir("news") / f"{ticker}_{since}_{now.date()}.json"
     path.write_text(json.dumps(articles, ensure_ascii=False, indent=1), encoding="utf-8")
-    top = sorted(articles, key=lambda a: (a["relevance"], a["time"]), reverse=True)[:limit]
+    # scored for this ticker 1st, then the ones about fewer companies, then the newest
+    top = sorted(articles, key=lambda a: (a["score"] is not None, -a["n_tickers"], a["time"]), reverse=True)[:limit]
     return {
         "ticker": ticker,
         "days": days,
         "total_articles": len(articles),
-        "articles": [{**a, "summary": a["summary"][:300] + ("..." if len(a["summary"]) > 300 else "")}
+        "articles": [{k: v for k, v in a.items() if k != "n_tickers"}
+                     | {"summary": a["summary"][:300] + ("..." if len(a["summary"]) > 300 else "")}
                      for a in top],
         "path": str(path),
-        "source": "alphavantage",
+        "source": "massive",
         **coverage,
         **meta,
     }
@@ -141,36 +152,35 @@ def get_sentiment(ticker, days=30, now=None):
     ticker = _norm(ticker)
     now = now or datetime.now()
     articles, meta, since, coverage = _articles(ticker, days, now)
+    scored = [a for a in articles if a["score"] is not None]
 
-    # relevance weighted, an article that barely mentions the ticker counts less
-    def weighted(items):
-        total = sum(a["relevance"] for a in items)
-        if total == 0:
-            return round(sum(a["score"] for a in items) / len(items), 4)
-        return round(sum(a["score"] * a["relevance"] for a in items) / total, 4)
+    def mean(items):
+        return round(sum(a["score"] for a in items) / len(items), 4)
 
     by_day = defaultdict(list)
-    for a in articles:
+    for a in scored:
         by_day[a["time"][:10]].append(a)
     path = sub_dir("sentiment") / f"{ticker}_{since}_{now.date()}.csv"
     with path.open("w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["date", "n_articles", "mean_score"])
         for day in sorted(by_day):
-            w.writerow([day, len(by_day[day]), weighted(by_day[day])])
+            w.writerow([day, len(by_day[day]), mean(by_day[day])])
 
-    mean = weighted(articles) if articles else None
+    m = mean(scored) if scored else None
     return {
         "ticker": ticker,
         "days": days,
         "n_articles": len(articles),
-        "mean_score": mean,
-        "label": label_for(mean) if articles else "no news",
-        "label_counts": dict(Counter(a["label"] for a in articles)),
+        "n_scored": len(scored),
+        "mean_score": m,
+        "label": label_for(m) if scored else "no news",
+        "sentiment_counts": dict(Counter(a["sentiment"] for a in scored)),
         "days_with_news": len(by_day),
         "path": str(path),
         "columns": ["date", "n_articles", "mean_score"],
-        "source": "alphavantage",
+        "method": "each article's sentiment towards the ticker (positive 1, neutral 0, negative -1), averaged",
+        "source": "massive",
         **coverage,
         **meta,
     }
