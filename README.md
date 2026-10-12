@@ -21,8 +21,11 @@ pip install -r requirements.txt
 cp .env.example .env
 # then set in .env:
 #   OLLAMA_API_KEY        https://ollama.com/settings/keys
-#   ALPHAVANTAGE_API_KEY  https://www.alphavantage.co/support/#api-key (free, for news and sentiment)
+#   MASSIVE_API_KEY       https://massive.com (free, for news and sentiment)
 ```
+
+`requirements.txt` includes [uv](https://docs.astral.sh/uv/), which sensai uses to launch the
+`fetch` MCP server in its own isolated environment (it is downloaded on the first run).
 
 The first time you start sensai, it offers to set up your profile (see [Your profile](#your-profile)).
 Every question is optional.
@@ -53,6 +56,7 @@ python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of
 | `/model` | Show the current model and the available ones |
 | `/model <name>` | Switch model; the conversation is kept |
 | `/think` | Show or hide the model's thinking (reasoning models only) |
+| `/tools` | List the MCP servers and the tools the model can call |
 | `/clear` | Start a new session; the current one stays saved |
 | `/sessions` | List the 10 most recent sessions |
 | `/resume <id>` | Reopen a session (a prefix of the id, or `last`) |
@@ -65,6 +69,174 @@ python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of
 
 **Ctrl+C** during an answer stops it and returns to the prompt. The interrupted question is not
 kept in the conversation, so you can simply ask again.
+
+## Usage examples
+
+Real sessions on the default model `gemma4:31b`. Long answers are shortened with `...`.
+
+### Chat with history (B1)
+
+The answer streams as it is generated, and earlier turns stay in context:
+
+```
+> my favourite ticker is NVDA
+...
+> what is my favourite ticker?
+NVDA
+```
+
+With a reasoning model, a spinner (`⠹ thinking 2.4s`) shows while it thinks, then its thinking
+streams in dim text before the answer. `/think` hides the thinking and keeps only the spinner:
+
+```bash
+python -m sensai --model gpt-oss:20b
+```
+
+Mistakes end in a one-line message, never a traceback:
+
+```
+$ python -m sensai --model gpt-oss:20
+sensai: model gpt-oss:20 not available on https://ollama.com, closest: gpt-oss:20b, gpt-oss:120b (/model to list them)
+
+>
+empty input, type a question or /help
+```
+
+Ctrl+C during an answer prints `[interrupted]` and returns to the prompt; the question is
+dropped from the history, so you can simply ask again.
+
+### Profile and saved sessions (M1)
+
+The first start offers to set up your profile. Every question can be skipped with Enter:
+
+```
+first time here. set up your profile now? every question is optional [Y/n] y
+your name: Jad
+sectors / industries you follow, comma separated: semiconductors, AI hardware
+main tickers you follow, comma separated: NVDA, AMD, TSM
+benchmark (e.g. SPY): SPY
+research style (e.g. concise, formula before the number): concise, formula before the number
+anything sensai should always know, 1 per line, empty line to finish
+  -
+```
+
+See it, and add a note on the fly:
+
+```
+> /profile
+name: Jad
+sectors: semiconductors, AI hardware
+watchlist: NVDA, AMD, TSM
+benchmark: SPY
+style: concise, formula before the number
+
+> /remember my focus this week is NVDA earnings
+noted (1 note(s)), /profile to see them
+```
+
+Every session is saved after each answer. List them, close sensai, and pick up where you left:
+
+```
+> /sessions
+  20261012-145719  2026-10-12 14:57    3 turns  gemma4:31b     last close of AAPL and what do the news say
+
+$ python -m sensai --resume
+resumed 20261012-145719: last close of AAPL and what do the news say (3 turns)
+you: open the most relevant AAPL article with the fetch tool and summarize it in 2 lines
+sensai: Apple is showing strong relative performance and projected earnings growth ...
+```
+
+The profile is given to the model in every session, so you never repeat it:
+
+```
+> and for my watchlist?
+NVDA, AMD, TSM; Focus: NVDA earnings
+```
+
+### Market data and tool calling (T1)
+
+`/tools` lists what the model can call, from our server and the official `fetch` server:
+
+```
+> /tools
+quant-data: get_prices, get_fundamentals, get_news, get_sentiment
+fetch: fetch
+```
+
+The model decides which tools it needs, and each call shows as one line:
+
+```
+> last close of AAPL and what do the news say
+⚙ get_prices(end=2026-10-12, start=2026-10-05, ticker=AAPL)  1.1s ✓
+⚙ get_news(ticker=AAPL)  1.1s ✓
+The last closing price for AAPL was $336.64 (as of October 9, 2026). ...
+
+> what is the news sentiment on NVDA over the last 7 days, and why?
+⚙ get_sentiment(days=7, ticker=NVDA)  1.0s ✓
+⚙ get_news(days=7, ticker=NVDA)  0.0s ✓
+... Bullish, mean score 0.539. Out of 154 scored articles, 88 positive, 61 neutral, 5 negative ...
+
+> open the most relevant AAPL article with the fetch tool and summarize it in 2 lines
+⚙ fetch(url=https://www.zacks.com/stock/news/3003233/apple-aapl-advances-wh...)  1.9s ✓
+Apple is showing strong relative performance ... Zacks Rank #3 (Hold) due to a high valuation ...
+```
+
+(`get_news` took 0.0 s: it reused the Massive call `get_sentiment` had just made.)
+
+Without naming a ticker, it uses your profile's watchlist and benchmark:
+
+```
+> how did my watchlist do over the past 30 days vs my benchmark? give a table
+⚙ get_prices(end=2026-10-12, start=2026-09-12, ticker=NVDA)  0.0s ✓
+⚙ get_prices(end=2026-10-12, start=2026-09-12, ticker=AMD)  0.0s ✓
+⚙ get_prices(end=2026-10-12, start=2026-09-12, ticker=TSM)  0.9s ✓
+⚙ get_prices(end=2026-10-12, start=2026-09-12, ticker=SPY)  0.0s ✓
+Performance over the last 30 days (2026-09-12 to 2026-10-12):
+
+Ticker | Return % | vs SPY
+--- | --- | ---
+AMD | +23.24% | +20.66%
+TSM | +8.74% | +6.16%
+NVDA | +8.68% | +6.10%
+SPY | +2.58% | 0.00%
+```
+
+A failed call is shown in red and handed back to the model, which explains it:
+
+```
+> what is the P/E of ZZZQX?
+⚙ get_fundamentals(ticker=ZZZQX)  0.8s ✗ no fundamentals for ZZZQX, check the ticker
+I cannot find the P/E ratio for ZZZQX as there are no fundamental data available for this ticker. ...
+```
+
+`fetch` reads any web page:
+
+```
+> read https://en.wikipedia.org/wiki/Nvidia and tell me in 2 lines what Nvidia makes and where it is headquartered
+⚙ fetch(url=https://en.wikipedia.org/wiki/Nvidia)  6.0s ✓
+Nvidia develops GPUs, SoCs, and APIs for data science, high-performance computing, and artificial intelligence.
+It is headquartered in Santa Clara, California.
+```
+
+### Things to try
+
+| Type this | You should see |
+|---|---|
+| `last close of AAPL and what do the news say` | 2 `⚙` lines (`get_prices`, `get_news`), then the price and a news summary |
+| `what is the news sentiment on NVDA over the last 7 days, and why?` | `get_sentiment` (and maybe `get_news`), a label, a score and the reasons |
+| `what is the P/E of ZZZQX?` | a red `✗ no fundamentals for ZZZQX` line, then the model says the ticker is unknown |
+| `read https://en.wikipedia.org/wiki/Nvidia and tell me where it is headquartered` | a `fetch` line, then "Santa Clara, California" |
+| `how did my watchlist do this month?` | one `get_prices` per ticker of your profile, without naming them |
+| `/exit`, then `python -m sensai --resume`, then `and what about AMD?` | the conversation goes on, with the data fetched before |
+
+### Our MCP server on its own
+
+The market data server works with any MCP client, not only sensai. To try it in the
+[MCP inspector](https://github.com/modelcontextprotocol/inspector):
+
+```bash
+npx @modelcontextprotocol/inspector .venv/bin/python -m sensai.servers.quant_data
+```
 
 ## Features
 
@@ -85,42 +257,51 @@ Every session is saved after each answer, so closing the terminal loses nothing.
 `/resume` picks a conversation up where it stopped.
 
 The profile tells sensai who you are and how you work. It is given to the model at the start of
-every session, together with today's date, so you never have to repeat it:
+every session, together with today's date, so you never have to repeat it.
 
-```
-> and for my watchlist?
-NVDA, AMD, TSM; Focus: NVDA earnings
-```
+### Tool calling over MCP (T1)
 
-### Market data tools over MCP (T1, first half)
+The model decides on its own when it needs data: it asks for a tool, sensai runs it through
+[MCP](https://modelcontextprotocol.io), sends the result back, and the model carries on with real
+numbers. Each call shows as one line, with a ✓ or the error (see [Usage examples](#usage-examples)).
 
-sensai ships its own [MCP](https://modelcontextprotocol.io) server with 4 market data tools. It
-runs on its own over stdio, so any MCP client can use it; wiring it into the chat is the next step
-([#5](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/5)).
+A failed call (unknown ticker, bad argument, API down) is sent back to the model as an error
+message, so it can explain it or try something else; the chat never crashes. A question can lead
+to several rounds of calls, up to `max_tool_rounds` (6 by default), after which the model answers
+with what it has. Tool calls and their results are saved with the session, so after `--resume` the
+model still has the data it fetched.
+
+sensai starts every server listed under `mcp_servers` in `config.yaml`. Two are set up:
+
+| Server | Tools | What for |
+|---|---|---|
+| `quant-data` (ours, `sensai/servers/quant_data.py`) | `get_prices`, `get_fundamentals`, `get_news`, `get_sentiment` | Market data, see below |
+| [`fetch`](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch) (official) | `fetch` | Reads a web page as Markdown, e.g. the full article behind a headline. It respects `robots.txt`, so some news sites refuse it |
+
+A server that fails to start is a warning, not a crash: the other tools still work. Servers' own
+logs go to `~/.sensai/logs/`, never into the chat.
+
+### Market data tools (our MCP server)
+
+Our server runs on its own over stdio, so any MCP client can use it, not only sensai.
 
 | Tool | Source | Returns |
 |---|---|---|
 | `get_prices(ticker, start, end, interval)` | Yahoo Finance | First and last close, return %, high, low, average volume, and a CSV with every bar |
 | `get_fundamentals(ticker)` | Yahoo Finance | Name, sector, industry, price, market cap, P/E, beta, dividend yield (%), 52 week range, earnings date |
-| `get_news(ticker, days, limit)` | Alpha Vantage | The most relevant recent articles, each with its sentiment towards the ticker |
-| `get_sentiment(ticker, days)` | Alpha Vantage | Relevance-weighted mean sentiment and its label, articles per label, and a CSV of the daily series |
+| `get_news(ticker, days, limit)` | Massive (ex Polygon.io) | Recent articles, each with its sentiment towards the ticker and the reason for it |
+| `get_sentiment(ticker, days)` | Massive (ex Polygon.io) | Mean sentiment (positive 1, neutral 0, negative -1) and its label, counts per sentiment, and a CSV of the daily series |
 
 Tools return short summaries rather than full tables, to keep the model's context small; the full
 data is saved as CSV or JSON in `data/` (`prices/`, `news/`, `sentiment/`).
 
 Every call is cached on disk in `data/cache/`: past prices forever, prices including today for an
 hour, fundamentals for a day, news for 6 hours. If a source fails (rate limit, no connection), the
-last cached value is returned, marked `"stale": true`. Alpha Vantage's free tier allows 25 calls a
-day, but one call covers a ticker's last 30 days of news and is shared by `get_news` and
-`get_sentiment`. One call returns at most 1000 articles, so for a heavily covered ticker a long
-window can be cut short: results then include `"truncated": true` and `covered_from`, the first
-day actually covered.
-
-To try the server on its own in the [MCP inspector](https://github.com/modelcontextprotocol/inspector):
-
-```bash
-npx @modelcontextprotocol/inspector .venv/bin/python -m sensai.servers.quant_data
-```
+last cached value is returned, marked `"stale": true`, even if it was fetched on an earlier day.
+Massive's free plan allows 5 calls a minute, and one call covers a ticker's last 30 days of news
+and is shared by `get_news` and `get_sentiment`. One call returns at most 1000 articles, so for a
+heavily covered ticker a long window can be cut short: results then include `"truncated": true`
+and `covered_from`, the first day actually covered.
 
 ## Your profile
 
@@ -146,8 +327,9 @@ can never be committed by mistake:
 ```
 ~/.sensai/
 ├── profile.yaml
-└── sessions/
-    └── 20260928-143012.json    one file per session, named after its start time
+├── sessions/
+│   └── 20260928-143012.json    one file per session, named after its start time
+└── logs/                       MCP servers' logs (quant-data.log, fetch.log, mcp.log)
 ```
 
 The folder is only readable by your user. Set `SENSAI_HOME` to use another folder, for instance a
@@ -165,8 +347,10 @@ the folder.
 | `ollama.timeout` | Seconds to wait for data before giving up (`120`) |
 | `system_prompt` | Base instructions; today's date and your profile are added after it |
 | `show_thinking` | Whether reasoning models' thinking is shown by default (`true`) |
+| `mcp_servers` | MCP servers to start: `name`, `command`, `args`, optional `env`, `cwd`, `enabled: false` to skip one. `python` means the Python running sensai |
+| `max_tool_rounds` | Rounds of tool calls per question before the model must answer (`6`) |
 
-`.env` holds the secrets: `OLLAMA_API_KEY` (required) and `ALPHAVANTAGE_API_KEY` (for news and
+`.env` holds the secrets: `OLLAMA_API_KEY` (required) and `MASSIVE_API_KEY` (for news and
 sentiment). Set `SENSAI_DATA` to store market data somewhere other than `data/`.
 
 ## Models
@@ -190,8 +374,11 @@ every week. Some models listed by `/model` are paid only.
 | `can't reach ..., check the connection` | Check your internet connection or the `--host` value |
 | `connection lost mid answer` | Ask again; the interrupted question was not kept |
 | `invalid yaml in .../profile.yaml` | Fix the file with `/profile edit`; sensai keeps running without a profile meanwhile |
-| `ALPHAVANTAGE_API_KEY is missing` | Get a free key at alphavantage.co and add it to `.env` |
-| `alpha vantage daily limit (25 calls) reached` | Cached news keeps working; new tickers wait until tomorrow |
+| `MASSIVE_API_KEY is missing` | Get a free key at massive.com and add it to `.env` |
+| `massive rate limit (5 calls/min on the free plan)` | Wait a minute; cached news keeps working meanwhile |
+| `massive refused the key` | Check `MASSIVE_API_KEY` in `.env` |
+| `[warning] mcp server X didnt start: ...` | Check the server's `command` in `config.yaml` (and that `uv` is installed for `fetch`); the other tools still work. Details in `~/.sensai/logs/X.log` |
+| `✗ ...` after a tool call | The tool failed; the model got the error and explains it. Nothing to do unless it keeps happening |
 | `no price data for X, check the ticker` | The symbol is unknown to Yahoo Finance (e.g. a typo) |
 | `yahoo only serves 1m bars for the last 7 days` | Use a later start date or a larger interval |
 
@@ -213,7 +400,7 @@ folders instead of your real `~/.sensai` and `data/`.
 | [#2](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/2) | B1 streaming CLI chatbot | Done |
 | [#3](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/3) | M1 saved sessions and user profile | Done |
 | [#4](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/4) | T1 market data MCP server | Done |
-| [#5](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/5) | T1 tool calling in the chat | Planned |
+| [#5](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/5) | T1 tool calling in the chat | Done |
 | [#6](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/6) | A1 multi-step reasoning loop (ReAct) | Planned |
 | [#7](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/7) | T2 sandboxed code execution | Planned |
 | [#8](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/8) | M4 research note | Planned |
