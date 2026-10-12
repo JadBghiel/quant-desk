@@ -11,6 +11,7 @@ HELP = """cmds:
   /model            show the current model and the available ones
   /model <name>     switch model, history is kept
   /think            show or hide the model's thinking
+  /tools            the MCP servers and the tools the model can call
   /clear            start a new session, the current one stays saved
   /sessions         the 10 most recent sessions
   /resume <id>      reopen a session (a prefix of the id or "last" works)
@@ -41,14 +42,29 @@ def handle_cmd(session, text):
     return False
 
 
+def count_turns(messages):
+    """1 turn = 1 question, tool msgs in between dont count"""
+    return sum(1 for m in messages if m.get("role") == "user")
+
+
+def last_exchange(messages):
+    """last question + the answer to it, skipping tool msgs and tool call rounds w/o text"""
+    users = [i for i, m in enumerate(messages) if m.get("role") == "user"]
+    if not users:
+        return []
+    rest = messages[users[-1]:]
+    answers = [m for m in rest if m.get("role") == "assistant" and m.get("content")]
+    return [rest[0], *answers[-1:]]
+
+
 def resumed_msg(session, record, tty=True):
     """what gets printed on resume: id, title, nb of turns, the last exchange dim"""
     turns = session.turns()
-    lines = [f"resumed {session.id}: {session.title or '(untitled)'} ({len(turns) // 2} turns)"]
+    lines = [f"resumed {session.id}: {session.title or '(untitled)'} ({count_turns(turns)} turns)"]
     if record.get("model") and record["model"] != session.model:
         lines.append(f"was on {record['model']}, now {session.model}")
     dim, reset = (DIM, RESET) if tty else ("", "")
-    for m in turns[-2:]:
+    for m in last_exchange(turns):
         text = " ".join(m["content"].split())
         who = "you" if m["role"] == "user" else "sensai"
         lines.append(f"{dim}{who}: {text[:200]}{'...' if len(text) > 200 else ''}{reset}")
@@ -62,6 +78,18 @@ def cmd_help(session, arg):
 def cmd_think(session, arg):
     session.show_thinking = not session.show_thinking
     print(f"thinking {'shown' if session.show_thinking else 'hidden'}")
+
+
+def cmd_tools(session, arg):
+    hub = session.hub
+    if not hub or not hub.servers:
+        print("no MCP server, add some under mcp_servers in config.yaml")
+        return
+    for name, srv in hub.servers.items():
+        if srv["status"] == "up":
+            print(f"{name}: {', '.join(srv['tools']) or '(no tools)'}")
+        else:
+            print(f"{name}: down, {srv['status']}")
 
 
 def cmd_model(session, arg):
@@ -88,7 +116,7 @@ def cmd_sessions(session, arg):
     if not records:
         print("no saved session yet")
     for r in records:
-        turns = len(r["messages"]) // 2
+        turns = count_turns(r["messages"])
         mark = "*" if r["id"] == session.id else " "
         print(f"{mark} {r['id']}  {r.get('updated', '')[:16].replace('T', ' ')}  {turns:>3} turns  "
               f"{r.get('model', '?'):<14} {r.get('title') or '(untitled)'}")
@@ -142,6 +170,7 @@ def cmd_forget(session, arg):
 CMDS = {
     "/help": cmd_help,
     "/think": cmd_think,
+    "/tools": cmd_tools,
     "/model": cmd_model,
     "/clear": cmd_clear,
     "/sessions": cmd_sessions,
