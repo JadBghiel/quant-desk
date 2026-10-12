@@ -24,6 +24,8 @@ paths:
 
 # MCP servers started w/ sensai, their tools are offered to the model. a server that fails to
 # start is a warning, the others still work. `enabled: false` skips one. stderr -> ~/.sensai/logs/
+# each server's limits (its MCP instructions, or `limits:` here) go in the system prompt so the
+# model knows what its tools cant do
 mcp_servers:
   # ours (#4): prices, fundamentals, news, sentiment
   - name: quant-data
@@ -34,6 +36,13 @@ mcp_servers:
   - name: fetch
     command: uvx
     args: [mcp-server-fetch]
+    # not ours, so its limits are written here
+    limits: Reads 1 web page from an exact URL and returns it as Markdown. It can't search, use
+      web search to find URLs. Some sites refuse it (robots.txt, paywalls, logins).
+  # ours (#17): live web search through tavily, needs TAVILY_API_KEY
+  - name: web
+    command: python
+    args: [-m, sensai.servers.web]
 
 # max tool call rounds per question, then the model answers w/ what it has
 max_tool_rounds: 6
