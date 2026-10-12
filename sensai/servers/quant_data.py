@@ -17,8 +17,19 @@ load_dotenv(REPO / ".env", override=False)
 
 server = MCPServer(
     name="sensai-quant-data",
-    instructions="Market data for quant research: daily or intraday prices, fundamentals, "
-                 "news and news sentiment per ticker. Full data is saved as files, results are summaries.",
+    # what it covers and what it doesnt, sensai puts this in the system prompt so the model knows its limits
+    instructions="Market data for quant research: prices, fundamentals, news and news sentiment per ticker. "
+                 "Results are summaries, the full data is saved as files. "
+                 "Prices and fundamentals (Yahoo Finance): stocks, ETFs, indices (^GSPC), FX (EURUSD=X) and "
+                 "crypto (BTC-USD); non-US stocks need the exchange suffix (MC.PA Paris, SAP.DE Xetra, 7203.T "
+                 "Tokyo). Daily history goes back decades, bars under 1 hour only for the last 60 days, 1 minute "
+                 "bars only for the last 7. Prices are split and dividend adjusted. Fundamentals are today's "
+                 "snapshot, no history and no financial statements. "
+                 "News and sentiment (Massive): US listed tickers, last 2 years, at most 1000 articles per call. "
+                 "Sentiment is a label per article (positive, neutral, negative), not a precise score. "
+                 "Not covered by these tools, look elsewhere (e.g. web search) for: options chains and implied "
+                 "volatility, order book or tick data, analyst estimates, SEC filings, earnings call transcripts, "
+                 "macro data.",
     # tool errors already reach the client as is_error results, logging them too is noise on stderr
     log_level="WARNING",
 )
