@@ -9,6 +9,7 @@ from sensai.chat import Session
 from sensai.commands import resumed_msg
 from sensai.config import ConfigError, load_config
 from sensai.home import user_dir
+from sensai.mcp_client import ToolHub
 from sensai.ollama import OllamaClient, OllamaError
 from sensai.repl import repl
 from sensai.sessions import SessionError, SessionStore
@@ -50,6 +51,24 @@ def load_or_setup_profile(path):
     return p
 
 
+def start_tools(cfg, home):
+    """starts the MCP servers, a broken one is a warning not a crash. None if no server is set"""
+    servers = cfg.get("mcp_servers") or []
+    if not servers:
+        return None
+    hub = ToolHub(log_dir=home / "logs")
+    for w in hub.start(servers):
+        print(f"[warning] {w}")
+    return hub
+
+
+def tools_msg(hub):
+    if not hub:
+        return "no tools, add MCP servers under mcp_servers in config.yaml"
+    up = [s for s in hub.servers.values() if s["status"] == "up"]
+    return f"tools: {len(hub.tools)} from {len(up)} server(s), /tools to list them"
+
+
 def main(argv=None):
     args = parse_args(argv)
     try:
@@ -68,13 +87,23 @@ def main(argv=None):
         return 130
 
     profile_path = home / "profile.yaml"
-    session = Session(client, cfg["model"], cfg.get("system_prompt"), cfg.get("show_thinking", True),
-                      store=store, profile=load_or_setup_profile(profile_path), profile_path=profile_path)
-    intro = None
-    if record:
-        session.load_record(record)
-        intro = resumed_msg(session, record, sys.stdout.isatty())
-    repl(session, intro)
+    profile = load_or_setup_profile(profile_path)
+    try:
+        hub = start_tools(cfg, home)
+    except KeyboardInterrupt:
+        return 130
+    try:
+        session = Session(client, cfg["model"], cfg.get("system_prompt"), cfg.get("show_thinking", True),
+                          store=store, profile=profile, profile_path=profile_path,
+                          hub=hub, max_tool_rounds=cfg.get("max_tool_rounds", 6))
+        intro = [tools_msg(hub)]
+        if record:
+            session.load_record(record)
+            intro.append(resumed_msg(session, record, sys.stdout.isatty()))
+        repl(session, "\n".join(intro))
+    finally:
+        if hub:
+            hub.close()
     return 0
 
 

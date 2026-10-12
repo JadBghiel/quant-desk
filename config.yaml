@@ -10,6 +10,9 @@ ollama:
 system_prompt: >-
   You are sensai, a research assistant for quantitative developers and researchers.
   Answer precisely and say when you are unsure.
+  Use the tools for any market data (prices, fundamentals, news, sentiment) and never invent a number.
+  When the user doesn't name a ticker, use the ones from their profile.
+  Your answers are shown in a plain terminal: never use LaTeX or math markup, write numbers as plain text (+20.66%).
 
 # reasoning models think for a few seconds 1st, shown dim so the stream is visible. /think toggles it
 show_thinking: true
@@ -19,5 +22,18 @@ paths:
   data: data
   out: out
 
-# filled in #5
-mcp_servers: []
+# MCP servers started w/ sensai, their tools are offered to the model. a server that fails to
+# start is a warning, the others still work. `enabled: false` skips one. stderr -> ~/.sensai/logs/
+mcp_servers:
+  # ours (#4): prices, fundamentals, news, sentiment
+  - name: quant-data
+    command: python          # = the python running sensai
+    args: [-m, sensai.servers.quant_data]
+  # preexisting, official: reads a web page as markdown (the full article behind a headline).
+  # pinned to mcp<2 so uvx runs it in its own env, downloaded on the 1st run
+  - name: fetch
+    command: uvx
+    args: [mcp-server-fetch]
+
+# max tool call rounds per question, then the model answers w/ what it has
+max_tool_rounds: 6
