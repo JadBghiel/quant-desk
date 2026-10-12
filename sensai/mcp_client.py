@@ -105,11 +105,11 @@ class ToolHub:
             ready = self._loop.create_future()
             task = asyncio.run_coroutine_threadsafe(self._serve(name, cfg, ready), self._loop)
             try:
-                client, tools = self._run(self._wait(ready), START_TIMEOUT)
+                client, tools, instructions = self._run(self._wait(ready), START_TIMEOUT)
             except Exception as e:
                 task.cancel()
                 msg = str(e) or type(e).__name__
-                self.servers[name] = {"status": msg, "tools": []}
+                self.servers[name] = {"status": msg, "tools": [], "limits": None}
                 warnings.append(f"mcp server {name} didnt start: {msg}")
                 continue
             self._tasks.append(task)
@@ -121,7 +121,10 @@ class ToolHub:
                 self._owner[tool.name] = client
                 self.tools.append(to_ollama_tool(tool))
                 names.append(tool.name)
-            self.servers[name] = {"status": "up", "tools": names}
+            # limits from the cfg win: thats how a server we dont control (fetch) gets them
+            limits = cfg.get("limits") or instructions
+            self.servers[name] = {"status": "up", "tools": names,
+                                  "limits": " ".join(limits.split()) if limits else None}
         return warnings
 
     async def _make_event(self):
@@ -143,7 +146,7 @@ class ToolHub:
             async with Client(stdio_client(params, errlog=self._errlog(name)), cache=None,
                               mode="legacy") as client:
                 listed = await client.list_tools()
-                ready.set_result((client, listed.tools))
+                ready.set_result((client, listed.tools, client.instructions))
                 await self._stop.wait()
         except BaseException as e:
             if not ready.done():
@@ -185,6 +188,33 @@ class ToolHub:
         if result.is_error:
             return False, text or f"{name} failed w/o a msg"
         return True, text
+
+    def capabilities(self):
+        """what the model can and cant do w/ its tools, for the system prompt. the tool schemas say
+        what each tool does, not what it doesnt cover, so the model would fill gaps from memory"""
+        lines = ["Your tools come from these MCP servers:"]
+        for name, srv in self.servers.items():
+            if srv["status"] != "up":
+                lines.append(f"- {name}: down this session, its tools are unavailable.")
+                continue
+            line = f"- {name} ({', '.join(srv['tools']) or 'no tools'})"
+            lines.append(line + (f": {srv['limits']}" if srv["limits"] else ""))
+        lines += [
+            "Rules:",
+            "- Company names, tickers and every number come from a tool result, not from memory.",
+            "- If a tool fails, say which one and why, then use another source if there is one.",
+        ]
+        if any("web_search" in srv["tools"] for srv in self.servers.values()):
+            lines += [
+                "- When the other tools can't answer (data they don't have, very recent events, unsupported "
+                "markets), call web_search before answering, and cite the URLs you used.",
+                "- Only say you can't find something once web_search failed or found nothing. Never fill the "
+                "gap from memory.",
+            ]
+        else:
+            lines.append("- If no tool covers what is asked, say so and say what is missing. Never fill the gap "
+                         "from memory.")
+        return "\n".join(lines)
 
     def close(self):
         if self._stop is not None:

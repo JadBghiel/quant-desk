@@ -9,11 +9,14 @@ from sensai import profile as prof
 from sensai.ui import DIM, RESET, Spinner, tool_line
 
 
-def build_system(base, profile, today=None):
-    """cfg prompt + today's date + the profile block, rebuilt on every start, resume and profile change"""
+def build_system(base, profile, tools=None, today=None):
+    """cfg prompt + today's date + the tools and their limits + the profile block, rebuilt on every
+    start, resume and profile change"""
     today = today or date.today()
     parts = [base] if base else []
     parts.append(f"Today is {today:%A %Y-%m-%d}.")
+    if tools:
+        parts.append(tools)
     about = prof.render(profile)
     if about:
         parts.append(about)
@@ -42,7 +45,8 @@ class Session:
     # --- history + persistence
 
     def system_text(self):
-        return build_system(self.system_prompt, self.profile)
+        tools = self.hub.capabilities() if self.hub and self.hub.servers else None
+        return build_system(self.system_prompt, self.profile, tools)
 
     def turns(self):
         return [m for m in self.messages if m["role"] != "system"]
