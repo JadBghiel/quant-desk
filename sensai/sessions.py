@@ -1,6 +1,6 @@
-"""1 json file per session in ~/.sensai/sessions, only user + assistant turns
+"""1 json file per session in ~/.sensai/sessions: user, assistant and tool msgs
 
-the system msg is never stored, its rebuilt on resume w/ today's date and the current profile
+the system msg is never stored, its rebuilt on resume w/ today's date, the tools and the current profile
 """
 
 import json
