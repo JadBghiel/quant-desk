@@ -3,6 +3,7 @@
 import sys
 
 from sensai import profile as prof
+from sensai.react import format_trace
 from sensai.ollama import OllamaError
 from sensai.sessions import SessionError
 from sensai.ui import DIM, RESET
@@ -12,6 +13,8 @@ HELP = """cmds:
   /model <name>     switch model, history is kept
   /think            show or hide the model's thinking
   /tools            the MCP servers and the tools the model can call
+  /trace            show or hide the details of each step (results, tokens)
+  /steps            the trace of the last answer: plan, every step, tokens
   /clear            start a new session, the current one stays saved
   /sessions         the 10 most recent sessions
   /resume <id>      reopen a session (a prefix of the id or "last" works)
@@ -78,6 +81,18 @@ def cmd_help(session, arg):
 def cmd_think(session, arg):
     session.show_thinking = not session.show_thinking
     print(f"thinking {'shown' if session.show_thinking else 'hidden'}")
+
+
+def cmd_trace(session, arg):
+    session.show_trace = not session.show_trace
+    print(f"step details {'shown' if session.show_trace else 'hidden'}")
+
+
+def cmd_steps(session, arg):
+    if not session.traces:
+        print("no answer yet in this session")
+        return
+    print(format_trace(session.traces[-1]))
 
 
 def cmd_tools(session, arg):
@@ -171,6 +186,8 @@ CMDS = {
     "/help": cmd_help,
     "/think": cmd_think,
     "/tools": cmd_tools,
+    "/trace": cmd_trace,
+    "/steps": cmd_steps,
     "/model": cmd_model,
     "/clear": cmd_clear,
     "/sessions": cmd_sessions,
