@@ -1,12 +1,12 @@
-"""chat session: history, system msg, persistence, 1 question -> tool rounds -> 1 streamed answer"""
+"""chat session: history, system msg, persistence, 1 question goes to the reasoning loop in loop.py"""
 
-import json
 import sys
-import time
 from datetime import date, datetime
 
+from sensai import loop, react
 from sensai import profile as prof
-from sensai.ui import DIM, RESET, Spinner, tool_line
+from sensai.react import Trace
+from sensai.ui import RESET
 
 
 def build_system(base, profile, tools=None, today=None):
@@ -29,10 +29,14 @@ def _now():
 
 class Session:
     def __init__(self, client, model, system_prompt=None, show_thinking=True, store=None,
-                 profile=None, profile_path=None, hub=None, max_tool_rounds=6):
+                 profile=None, profile_path=None, hub=None, max_steps=12, token_budget=60000,
+                 show_trace=False):
         self.client = client
         self.hub = hub
-        self.max_tool_rounds = max_tool_rounds
+        # the reasoning loop's budget per question: tool calls, and tokens read + written
+        self.max_steps = max_steps
+        self.token_budget = token_budget
+        self.show_trace = show_trace
         self.model = model
         self.system_prompt = system_prompt
         self.show_thinking = show_thinking
@@ -45,7 +49,10 @@ class Session:
     # --- history + persistence
 
     def system_text(self):
-        tools = self.hub.capabilities() if self.hub and self.hub.servers else None
+        tools = None
+        if self.hub and self.hub.servers:
+            names = [t["function"]["name"] for t in self.hub.tools]
+            tools = self.hub.capabilities() + "\n\n" + react.rules(names)
         return build_system(self.system_prompt, self.profile, tools)
 
     def turns(self):
@@ -64,20 +71,22 @@ class Session:
         self.id = self.store.new_id() if self.store else None
         self.title = None
         self.created = _now()
+        self.traces = []
         self.messages = [{"role": "system", "content": self.system_text()}]
 
     def load_record(self, record):
-        """resume a saved session, system msg rebuilt fresh not taken from the file"""
+        """resume a saved session, the system msg is rebuilt w/ today's date, the tools and the profile"""
         self.id = record["id"]
         self.title = record.get("title")
         self.created = record.get("created", _now())
-        # tool msgs kept so the model still has the data it fetched
+        self.traces = list(record.get("traces") or [])
+        # tool msgs kept -> the model still has the data it fetched
         self.messages = [{"role": "system", "content": self.system_text()},
                          *[m for m in record["messages"] if m.get("role") in ("user", "assistant", "tool")]]
 
     def record(self):
         return {"id": self.id, "title": self.title, "created": self.created, "updated": _now(),
-                "model": self.model, "messages": self.turns()}
+                "model": self.model, "messages": self.turns(), "traces": self.traces}
 
     def save(self):
         """a failed save is a warning, the chat goes on"""
@@ -88,105 +97,26 @@ class Session:
         except OSError as e:
             print(f"\n[warning] session not saved: {e}")
 
-    # --- 1 question -> tool rounds -> 1 streamed answer
+    # --- 1 question -> reasoning rounds -> 1 streamed answer
 
     def ask(self, text, out=sys.stdout):
-        """streams the answer to out, the turn only stays in the history if the answer completed
+        """streams the answer to out, the turn stays in the history if the answer completed
 
         error or Ctrl+C at any point (mid stream, mid tool call) -> history back to before the
-        question so a retry sends a clean history
+        question and no trace, a retry sends a clean history
         """
         tty = out.isatty()
         start = len(self.messages)
         self.messages.append({"role": "user", "content": text})
+        trace = Trace(text)
         try:
-            answer = self._answer(out, tty)
+            answer = loop.answer(self, out, tty, trace)
         except BaseException:
             out.write(RESET if tty else "")
             del self.messages[start:]
             raise
+        self.traces.append(trace.to_dict())
         if self.title is None:
             self.title = " ".join(text.split())[:60]
         self.save()
         return answer
-
-    def _answer(self, out, tty):
-        """round = 1 model call. tool calls -> run them, results appended, next round.
-        the last round goes w/o tools so the model has to answer w/ what it has"""
-        tools = self.hub.tools if self.hub else None
-        for n in range(self.max_tool_rounds + 1):
-            last = n == self.max_tool_rounds
-            if last and tools:
-                out.write(f"{DIM if tty else ''}[{self.max_tool_rounds} tool rounds, answering w/ what it has]"
-                          f"{RESET if tty else ''}\n")
-            content, calls = self._stream_round(out, tty, None if last else tools)
-            if not calls:
-                self.messages.append({"role": "assistant", "content": content})
-                return content
-            self.messages.append({"role": "assistant", "content": content, "tool_calls": calls})
-            if content:
-                out.write("\n")
-            for call in calls:
-                self._run_tool(call, out, tty)
-        return content
-
-    def _stream_round(self, out, tty, tools):
-        """1 model call streamed to out -> (content, tool calls)
-
-        the spinner runs while nothing else is on screen: waiting for the 1st chunk, and the
-        whole thinking phase when /think hides it. thinking is never kept in the history
-        """
-        dim, reset = (DIM, RESET) if tty else ("", "")
-        parts, calls, state = [], [], None
-        # cloud models can take seconds before the 1st chunk
-        spinner = Spinner(out).start() if tty else None
-        try:
-            for kind, chunk in self.client.chat_stream(self.model, self.messages, tools):
-                if kind == "thinking":
-                    if self.show_thinking:
-                        if spinner and spinner.running:
-                            spinner.stop()
-                        out.write((dim if state is None else "") + chunk)
-                    state = state or "thinking"
-                elif kind == "tool_call":
-                    calls.append(chunk)
-                else:
-                    if spinner and spinner.running:
-                        spinner.stop()
-                    elif state == "thinking" and self.show_thinking:
-                        out.write(reset + "\n\n")
-                    state = "content"
-                    parts.append(chunk)
-                    out.write(chunk)
-                out.flush()
-        finally:
-            if spinner:
-                spinner.stop()
-        if state == "thinking" and self.show_thinking:
-            # thought then went straight to a tool call
-            out.write(reset + "\n")
-        return "".join(parts), calls
-
-    def _run_tool(self, call, out, tty):
-        """runs 1 call through the hub, prints its line, appends the tool msg. a failed call is
-        sent back to the model as an error msg, it decides what to do w/ it"""
-        fn = call.get("function") or {}
-        name, args = fn.get("name", "?"), fn.get("arguments") or {}
-        if isinstance(args, str):
-            try:
-                args = json.loads(args)
-            except ValueError:
-                pass
-        spinner = Spinner(out, name).start() if tty else None
-        t0 = time.monotonic()
-        try:
-            ok, result = self.hub.call(name, args)
-        finally:
-            if spinner:
-                spinner.stop()
-        out.write(tool_line(name, args, time.monotonic() - t0, ok, None if ok else result, tty) + "\n")
-        out.flush()
-        msg = {"role": "tool", "tool_name": name, "content": result if ok else f"error: {result}"}
-        if call.get("id"):
-            msg["tool_call_id"] = call["id"]
-        self.messages.append(msg)

@@ -1,8 +1,8 @@
-# fast, no thinking, does tool calls. reasoning ones (gpt-oss:20b, qwen3.5:397b) via --model
+# fast, no thinking, does tool calls, reasoning ones (gpt-oss:20b, qwen3.5:397b) via --model
 model: gemma4:31b
 
 ollama:
-  # cloud only, no model runs locally. needs OLLAMA_API_KEY in .env
+  # cloud, no model on this machine, needs OLLAMA_API_KEY in .env
   host: https://ollama.com
   timeout: 120
 
@@ -14,29 +14,29 @@ system_prompt: >-
   When the user doesn't name a ticker, use the ones from their profile.
   Your answers are shown in a plain terminal: never use LaTeX or math markup, write numbers as plain text (+20.66%).
 
-# reasoning models think for a few seconds 1st, shown dim so the stream is visible. /think toggles it
+# reasoning models think for a few seconds 1st, shown dim -> the stream stays visible, /think toggles it
 show_thinking: true
 
-# profile + sessions live in ~/.sensai (or $SENSAI_HOME), not here
+# profile + sessions live in ~/.sensai (or $SENSAI_HOME)
 paths:
   data: data
   out: out
 
-# MCP servers started w/ sensai, their tools are offered to the model. a server that fails to
-# start is a warning, the others still work. `enabled: false` skips one. stderr -> ~/.sensai/logs/
-# each server's limits (its MCP instructions, or `limits:` here) go in the system prompt so the
-# model knows what its tools cant do
+# MCP servers started w/ sensai, their tools are offered to the model
+# a server that fails to start is a warning, the others still work, `enabled: false` skips one
+# stderr -> ~/.sensai/logs/, each server's limits (its MCP instructions, or `limits:` here) go in
+# the system prompt -> the model knows what its tools cant do
 mcp_servers:
   # ours (#4): prices, fundamentals, news, sentiment
   - name: quant-data
     command: python          # = the python running sensai
     args: [-m, sensai.servers.quant_data]
-  # preexisting, official: reads a web page as markdown (the full article behind a headline).
-  # pinned to mcp<2 so uvx runs it in its own env, downloaded on the 1st run
+  # preexisting, official: reads a web page as markdown (the full article behind a headline)
+  # pinned to mcp<2 -> uvx runs it in its own env, downloaded on the 1st run
   - name: fetch
     command: uvx
     args: [mcp-server-fetch]
-    # not ours, so its limits are written here
+    # not ours -> its limits are written here
     limits: Reads 1 web page from an exact URL and returns it as Markdown. It can't search, use
       web search to find URLs. Some sites refuse it (robots.txt, paywalls, logins).
   # ours (#17): live web search through tavily, needs TAVILY_API_KEY
@@ -44,5 +44,7 @@ mcp_servers:
     command: python
     args: [-m, sensai.servers.web]
 
-# max tool call rounds per question, then the model answers w/ what it has
-max_tool_rounds: 6
+# the reasoning loop's budget per question (#6): tool calls, and tokens read + written over all
+# its rounds, past either one -> 1 last round w/o tools, the model answers w/ what it has
+max_steps: 12
+token_budget: 60000

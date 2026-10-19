@@ -22,12 +22,13 @@ def parse_args(argv=None):
     p.add_argument("--config", default="config.yaml", help="path to the config file (default: config.yaml)")
     p.add_argument("--resume", nargs="?", const="last", metavar="ID",
                    help="reopen a saved session, the last one if no id is given (a prefix works)")
+    p.add_argument("--trace", action="store_true", help="show the details of each step (results, tokens)")
     p.add_argument("--version", action="version", version=f"sensai {__version__}")
     return p.parse_args(argv)
 
 
 def load_or_setup_profile(path):
-    """1st run -> questions if stdin is a terminal. a broken file -> warning + no profile, not a crash"""
+    """1st run -> questions if stdin is a terminal, a broken file -> warning + no profile"""
     try:
         p = prof.load_profile(path)
     except prof.ProfileError as e:
@@ -52,7 +53,7 @@ def load_or_setup_profile(path):
 
 
 def start_tools(cfg, home):
-    """starts the MCP servers, a broken one is a warning not a crash. None if no server is set"""
+    """starts the MCP servers, a broken one -> warning, None if no server is set"""
     servers = cfg.get("mcp_servers") or []
     if not servers:
         return None
@@ -74,7 +75,7 @@ def main(argv=None):
     try:
         cfg = load_config(args.config, model=args.model, host=args.host)
         client = OllamaClient(cfg["ollama"]["host"], cfg["ollama"].get("timeout", 120))
-        # fail at startup not on the 1st prompt
+        # fail at startup, before the 1st prompt
         client.check_auth()
         client.check_model(cfg["model"])
         home = user_dir()
@@ -95,7 +96,8 @@ def main(argv=None):
     try:
         session = Session(client, cfg["model"], cfg.get("system_prompt"), cfg.get("show_thinking", True),
                           store=store, profile=profile, profile_path=profile_path,
-                          hub=hub, max_tool_rounds=cfg.get("max_tool_rounds", 6))
+                          hub=hub, max_steps=cfg.get("max_steps", 12),
+                          token_budget=cfg.get("token_budget", 60000), show_trace=args.trace)
         intro = [tools_msg(hub)]
         if record:
             session.load_record(record)

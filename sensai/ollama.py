@@ -55,7 +55,7 @@ class OllamaClient:
             self.http.headers["Authorization"] = f"Bearer {self.key}"
 
     def _request(self, method, path, **kw):
-        # connect timeout short so a dead host fails fast, read timeout from the cfg
+        # short connect timeout -> a dead host fails fast, read timeout from the cfg
         try:
             r = self.http.request(method, self.host + path, timeout=(10, self.timeout), **kw)
         except requests.ConnectionError:
@@ -65,7 +65,7 @@ class OllamaClient:
         if r.status_code in (401, 403):
             raise AuthError("OLLAMA_API_KEY missing or invalid, check .env")
         if r.status_code == 402:
-            # listed in /api/tags but paid only, eg the flash ones
+            # listed in /api/tags but paid, eg the flash ones
             raise NotInPlan("this model isnt in the free tier, pick another one (/model to list them)")
         if r.status_code == 429:
             raise QuotaHit("cloud quota hit, wait for the reset (5h / weekly caps)")
@@ -76,7 +76,7 @@ class OllamaClient:
         return r
 
     def check_auth(self):
-        """ollama.com /api/tags is public so a bad key only shows on /api/me, local daemon has no auth"""
+        """ollama.com /api/tags is public -> a bad key shows up on /api/me, local daemon has no auth"""
         if not self.local:
             self._request("POST", "/api/me")
 
@@ -93,10 +93,11 @@ class OllamaClient:
         raise ModelNotFound(f"model {model} not available on {self.host}{hint} (/model to list them)")
 
     def chat_stream(self, model, messages, tools=None):
-        """yields (kind, value) chunk by chunk, kind is "thinking", "content" or "tool_call"
+        """yields (kind, value) chunk by chunk, kind is "thinking", "content", "tool_call" or
+        "stats" (the last one: {"prompt": tokens read, "output": tokens written})
 
-        reasoning models (gpt-oss...) think for seconds before the 1st content token,
-        so the thinking is streamed too or the answer looks like 1 block after a pause.
+        reasoning models (gpt-oss...) think for seconds before the 1st content token -> the
+        thinking is streamed too, or the answer looks like 1 block after a pause
         a tool call comes as 1 complete chunk: {"id", "function": {"name", "arguments": {...}}}
         """
         body = {"model": model, "messages": messages, "stream": True}
@@ -118,6 +119,9 @@ class OllamaClient:
                 for call in msg.get("tool_calls") or []:
                     yield "tool_call", call
                 if data.get("done"):
+                    # the token counts of this call, for the budget of the reasoning loop
+                    yield "stats", {"prompt": data.get("prompt_eval_count") or 0,
+                                    "output": data.get("eval_count") or 0}
                     return
         except (requests.ConnectionError, requests.exceptions.ChunkedEncodingError):
             raise StreamLost("connection lost mid answer") from None
