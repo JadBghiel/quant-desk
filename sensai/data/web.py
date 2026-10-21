@@ -1,9 +1,10 @@
 """web search through tavily /search
 
 for what the market tools dont cover: fresh events, macro, other markets, a 2nd source when a
-data api fails. free plan = 1000 searches a month, basic depth = 1 credit. tavily's own LLM
-answer (include_answer) is never asked for: every model call has to go through ollama, so the
-model reads the sources and writes the answer itself
+data api fails
+free plan = 1000 searches a month, basic depth = 1 credit
+include_answer stays off, its tavily's own LLM and every model call has to go through ollama ->
+the model reads the sources and writes the answer itself
 """
 
 import os
@@ -89,6 +90,9 @@ def web_search(query, topic="general", days=None, max_results=5, today=None):
         "topic": topic,
         "n_results": len(results),
         "results": results,
+        # read right before the model's next step -> works better here than in the system msg
+        "note": "These are short snippets, not the pages. If they don't contain the answer (a table, "
+                "a ranking, a full article), call fetch on the most promising url to read it.",
         "source": "tavily",
         **meta,
     }

@@ -1,8 +1,8 @@
 """web search MCP server over stdio: 1 tool, web_search, on tavily
 
 run: python -m sensai.servers.web
-the instructions are its limits, sensai puts them in the system prompt so the model knows when to
-search and what a search cant give
+the instructions are its limits, sensai puts them in the system prompt -> the model knows when
+to search and what a search cant give
 """
 
 from dotenv import load_dotenv
@@ -30,6 +30,8 @@ def web_search(query: str, topic: str = "general", days: int | None = None, max_
 
     Use it whenever the other tools don't cover a question (options and implied volatility, macro data,
     recent events, filings, non-US news...): search before ever answering that you don't have the data.
+    The snippets are short: when they don't hold the answer (a table, a ranking, a full article), call
+    fetch on the most promising URL and read the page before saying you can't find it.
     Cite the URLs of the results you use in your answer.
 
     Args:
