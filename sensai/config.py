@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 
 
 class ConfigError(Exception):
-    """bad or missing cfg, shown to the user as a plain msg not a traceback"""
+    """bad or missing cfg, shown to the user as a plain msg w/o traceback"""
 
 
 def load_config(path, model=None, host=None):

@@ -1,9 +1,10 @@
 """news + sentiment from massive (ex polygon.io) /v2/reference/news
 
-free basic plan = 5 calls/min, 2 years of history, 1000 articles per call. 1 call fetches a whole
-window (30 days min) for a ticker and is cached 6h, get_news and get_sentiment both filter that
-same call. each article has per ticker insights: sentiment (positive / neutral / negative) + a
-sentence saying why, mapped to 1 / 0 / -1 so a mean can be taken
+free basic plan = 5 calls/min, 2 years of history, 1000 articles per call
+1 call fetches a whole window (30 days min) for a ticker, cached 6h, get_news and get_sentiment
+both filter that same call
+each article has per ticker insights: sentiment (positive / neutral / negative) + a sentence
+saying why, mapped to 1 / 0 / -1 for a mean
 """
 
 import csv
@@ -96,19 +97,19 @@ def _fetch(ticker, window, now):
 
 
 def _articles(ticker, days, now=None):
-    """(articles in the last `days`, meta, window start, coverage). ticker already uppercased"""
+    """(articles in the last `days`, meta, window start, coverage), ticker already uppercased"""
     now = now or datetime.now()
     if not 1 <= days <= 365:
         raise DataError("days must be between 1 and 365")
     window = max(MIN_WINDOW_DAYS, days)
-    # keyed on the day so the window moves forward, 6h so the same day gets fresh news.
-    # the fallback key has no date: if massive fails, yesterday's news is served as stale
+    # keyed on the day -> the window moves forward, 6h -> fresh news within the same day
+    # the fallback key has no date, if massive fails yesterday's news is served as stale
     got, meta = cached("news", ["v3", ticker, window, now.date().isoformat()], 6 * 3600,
                        lambda: _fetch(ticker, window, now), fallback_key=["v3", ticker, window])
     since = (now - timedelta(days=days)).isoformat()
     articles = [a for a in got["articles"] if a["time"] >= since]
     covered_from = min((a["time"][:10] for a in articles), default=None)
-    # truncated only matters if the cut reaches into the days asked for
+    # truncated counts when the cut reaches into the days asked for
     cut = got["truncated"] and covered_from is not None and covered_from > since[:10]
     coverage = {"covered_from": covered_from, "truncated": bool(cut)}
     if cut:

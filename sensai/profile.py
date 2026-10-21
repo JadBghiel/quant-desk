@@ -1,6 +1,6 @@
 """user profile, ~/.sensai/profile.yaml -> injected in the system prompt at init
 
-every field is optional, an empty one is just left out of the prompt
+every field is optional, an empty one is left out of the prompt
 """
 
 import os
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import yaml
 
-# key, question asked in the setup, kind. order = order in the yaml and in the prompt
+# key, question asked in the setup, kind, list order = order in the yaml and in the prompt
 FIELDS = [
     ("name", "your name", "text"),
     ("sectors", "sectors / industries you follow, comma separated", "list"),
@@ -90,7 +90,7 @@ def save_profile(path, p):
 def setup(ask=input, current=None, say=print):
     """asks every field, Enter skips (or keeps the current value), "-" clears it
 
-    ask is injectable for the tests. Ctrl+C / Ctrl+D go up to the caller, nothing is saved then
+    ask is injectable for the tests, Ctrl+C / Ctrl+D go up to the caller and nothing is saved
     """
     first_run = current is None
     current = dict(current or {})
@@ -199,7 +199,7 @@ def editor_cmd():
 
 
 def edit(path, p):
-    """opens the file in the editor, returns the reloaded profile. bad yaml -> ProfileError, old one kept"""
+    """opens the file in the editor, returns the reloaded profile, bad yaml -> ProfileError, old one kept"""
     path = Path(path)
     if not path.is_file():
         save_profile(path, p or {})

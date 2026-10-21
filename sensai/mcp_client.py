@@ -1,7 +1,7 @@
-"""MCP client: starts the servers from the cfg, lists their tools, runs the calls the model asks for
+"""MCP client: starts the servers from the cfg, lists their tools, makes the calls the model asks for
 
-the mcp sdk is async and the chat is sync, so 1 background thread runs an asyncio loop and keeps
-every server's session open for the whole run. the sync methods hand coroutines to that loop
+the mcp sdk is async and the chat is sync -> 1 background thread w/ an asyncio loop keeps every
+server's session open for the whole run, the sync methods hand coroutines to that loop
 """
 
 import asyncio
@@ -21,7 +21,7 @@ MAX_RESULT = 8000  # chars, a tool result shouldnt eat the context
 
 
 def resolve_command(command):
-    """`python` -> this interpreter, else the venv's bin/ first so it works w/o activating it"""
+    """`python` -> this interpreter, else the venv's bin/ 1st -> works w/o activating it"""
     if command in ("python", "python3"):
         return sys.executable
     local = Path(sys.executable).parent / command
@@ -60,8 +60,8 @@ def result_text(result):
 
 
 def _quiet_sdk_logs(log_dir):
-    """the sdk logs warnings (eg a server line it cant parse) and w/o a handler python prints
-    them on stderr, in the middle of the chat. they go to mcp.log instead"""
+    """the sdk logs warnings (eg a server line it cant parse), w/o a handler python prints them
+    on stderr in the middle of the chat -> they go to mcp.log"""
     logger = logging.getLogger("mcp")
     logger.propagate = False
     if logger.handlers:
@@ -121,7 +121,7 @@ class ToolHub:
                 self._owner[tool.name] = client
                 self.tools.append(to_ollama_tool(tool))
                 names.append(tool.name)
-            # limits from the cfg win: thats how a server we dont control (fetch) gets them
+            # limits from the cfg win, thats how a server we dont control (fetch) gets them
             limits = cfg.get("limits") or instructions
             self.servers[name] = {"status": "up", "tools": names,
                                   "limits": " ".join(limits.split()) if limits else None}
@@ -141,8 +141,8 @@ class ToolHub:
         params = StdioServerParameters(command=resolve_command(cfg["command"]),
                                        args=[str(a) for a in cfg.get("args", [])], env=env, cwd=cfg.get("cwd"))
         try:
-            # legacy = the classic initialize handshake, every server version speaks it. fetch is
-            # still on mcp 1.x and rejects the discover request "auto" tries 1st
+            # legacy = the initialize handshake every server version speaks, fetch is still on
+            # mcp 1.x and rejects the discover request "auto" tries 1st
             async with Client(stdio_client(params, errlog=self._errlog(name)), cache=None,
                               mode="legacy") as client:
                 listed = await client.list_tools()
@@ -167,7 +167,7 @@ class ToolHub:
     # --- calls
 
     def call(self, name, args):
-        """-> (ok, text). every failure is a msg for the model, nothing raises except Ctrl+C"""
+        """-> (ok, text), every failure is a msg for the model, nothing raises except Ctrl+C"""
         client = self._owner.get(name)
         if client is None:
             return False, f"unknown tool {name}, available: {', '.join(self._owner)}"
@@ -190,8 +190,9 @@ class ToolHub:
         return True, text
 
     def capabilities(self):
-        """what the model can and cant do w/ its tools, for the system prompt. the tool schemas say
-        what each tool does, not what it doesnt cover, so the model would fill gaps from memory"""
+        """what the model can and cant do w/ its tools, for the system prompt, the tool schemas say
+        what each tool does and leave out what it doesnt cover -> the model would fill the gaps
+        from memory"""
         lines = ["Your tools come from these MCP servers:"]
         for name, srv in self.servers.items():
             if srv["status"] != "up":

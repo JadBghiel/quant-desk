@@ -1,7 +1,7 @@
 """prices + fundamentals from yfinance
 
-prices are saved as csv in data/prices/ and only a summary goes back to the model,
-250 rows in the context would blow it for nothing. the sandbox (#7) reads the csv
+prices are saved as csv in data/prices/ and a summary goes back to the model,
+250 rows in the context would blow it for nothing, the sandbox (#7) reads the csv
 """
 
 import csv
@@ -34,7 +34,7 @@ FUNDAMENTALS = {
 def _yf():
     # imported lazily, yfinance pulls pandas and takes ~1s to import
     import yfinance
-    # it logs "possibly delisted" & co on stderr, would leak into the chat. errors are handled here
+    # it logs "possibly delisted" & co on stderr, would leak into the chat, errors are handled here
     logging.getLogger("yfinance").setLevel(logging.CRITICAL)
     return yfinance
 
@@ -54,7 +54,7 @@ def _norm_ticker(ticker):
 
 
 def check_range(interval, start, end, today=None):
-    """dates + interval checked against yahoo's limits, msg says what to do instead"""
+    """dates + interval compared w/ yahoo's limits, msg says what to do instead"""
     today = today or date.today()
     if interval not in INTERVALS:
         raise DataError(f"interval {interval!r} not supported, use one of {', '.join(INTERVALS)}")
@@ -139,10 +139,10 @@ def get_fundamentals(ticker):
                 out[field] = round(value, 4) if isinstance(value, float) else value
         ts = info.get("earningsTimestamp")
         if ts:
-            # yahoo gives the next one or the last one depending on the day, so no "next" in the name
+            # yahoo gives the next one or the last one depending on the day -> no "next" in the name
             out["earnings_date"] = datetime.fromtimestamp(ts).date().isoformat()
         return out
 
-    # bump the version when FUNDAMENTALS changes so old cache entries w/ the old fields are ignored
+    # bump the version when FUNDAMENTALS changes -> old cache entries w/ the old fields get ignored
     value, meta = cached("fundamentals", ["v2", ticker], 24 * 3600, fetch)
     return {"ticker": ticker, **value, "source": "yfinance", **meta}

@@ -1,6 +1,6 @@
 """1 json file per session in ~/.sensai/sessions: user, assistant and tool msgs
 
-the system msg is never stored, its rebuilt on resume w/ today's date, the tools and the current profile
+the system msg isnt stored, its rebuilt on resume w/ today's date, the tools and the current profile
 """
 
 import json
@@ -19,7 +19,7 @@ class SessionStore:
         self.dir.mkdir(parents=True, exist_ok=True)
 
     def new_id(self, now=None):
-        """start time, sortable and readable. same second -> -2, -3..."""
+        """start time, sortable and readable, same second -> -2, -3..."""
         base = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
         sid, n = base, 2
         while (self.dir / f"{sid}.json").exists():
@@ -27,7 +27,7 @@ class SessionStore:
         return sid
 
     def save(self, record):
-        # tmp file then rename, a crash mid write never leaves a half json
+        # tmp file then rename -> a crash mid write cant leave a half json
         path = self.dir / f"{record['id']}.json"
         tmp = path.with_suffix(".json.tmp")
         tmp.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")

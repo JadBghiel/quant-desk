@@ -11,7 +11,7 @@ FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 class Spinner:
     """animated "thinking 1.2s" line, redrawn by a thread until stop() wipes it
 
-    stop() joins the thread so nothing it writes can land in the middle of the answer.
+    stop() joins the thread -> nothing it writes can land in the middle of the answer
     1 shot, a new Spinner for every wait
     """
 

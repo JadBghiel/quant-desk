@@ -1,7 +1,7 @@
 """per user folder for everything personal: profile + sessions
 
-lives outside the repo so nothing personal can get committed, and the os user
-already separates people on the same machine so no auth needed
+lives outside the repo -> nothing personal can get committed, the os user
+already separates people on the same machine -> no auth needed
 """
 
 import os

@@ -33,12 +33,12 @@ def _write(path, entry):
 
 
 def cached(kind, key, ttl, fetch, now=None, fallback_key=None):
-    """(value, meta). ttl in secs, FOREVER = never expires
+    """(value, meta), ttl in secs, FOREVER = doesnt expire
 
-    meta = {"cached": bool, "stale": bool, "age_s": int}. fetch must return json serializable data
-    and raise DataError on failure, a stale entry is then served if there is one.
-    key usually holds today's date, so yesterday's entry never matches it: fallback_key (no date)
-    also keeps the last good value, served as stale when the exact key has nothing
+    meta = {"cached": bool, "stale": bool, "age_s": int}, fetch returns json serializable data
+    and raises DataError on failure -> a stale entry is served if there is one
+    key usually holds today's date -> yesterday's entry cant match it, fallback_key (no date)
+    also keeps the last good value, served as stale when the dated key has nothing
     """
     now = time.time() if now is None else now
     path = _path(kind, key)

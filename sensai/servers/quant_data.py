@@ -12,12 +12,12 @@ from mcp.server.mcpserver.exceptions import ToolError
 
 from sensai.data import REPO, DataError, market, news
 
-# launched by any client from any dir, so the repo's .env is loaded explicitly
+# launched by any client from any dir -> the repo's .env is loaded explicitly
 load_dotenv(REPO / ".env", override=False)
 
 server = MCPServer(
     name="sensai-quant-data",
-    # what it covers and what it doesnt, sensai puts this in the system prompt so the model knows its limits
+    # what it covers and what it doesnt, sensai puts this in the system prompt -> the model knows its limits
     instructions="Market data for quant research: prices, fundamentals, news and news sentiment per ticker. "
                  "Results are summaries, the full data is saved as files. "
                  "Prices and fundamentals (Yahoo Finance): stocks, ETFs, indices (^GSPC), FX (EURUSD=X) and "
@@ -36,7 +36,7 @@ server = MCPServer(
 
 
 def _run(fn, *args, **kwargs):
-    # a DataError is anticipated, its msg reaches the model as is. anything else stays a crash
+    # a DataError is anticipated, its msg reaches the model as is, anything else stays a crash
     try:
         return fn(*args, **kwargs)
     except DataError as e:
