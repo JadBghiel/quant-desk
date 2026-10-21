@@ -46,6 +46,7 @@ python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of
 | `--host HOST` | Ollama host, overrides `config.yaml` (e.g. `http://localhost:11434` for a local Ollama) |
 | `--config CONFIG` | Path to the config file (default: `config.yaml`) |
 | `--resume [ID]` | Reopen a saved session: the last one without an id, or the one whose id starts with `ID` |
+| `--trace` | Show the details of each reasoning step: tool results and tokens used |
 | `--version` | Print the version |
 | `-h`, `--help` | Show the help |
 
@@ -58,6 +59,8 @@ python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of
 | `/model <name>` | Switch model; the conversation is kept |
 | `/think` | Show or hide the model's thinking (reasoning models only) |
 | `/tools` | List the MCP servers and the tools the model can call |
+| `/trace` | Show or hide the details of each step (tool results, tokens used) |
+| `/steps` | Print the trace of the last answer: the plan, every step with its thought and result, the tokens |
 | `/clear` | Start a new session; the current one stays saved |
 | `/sessions` | List the 10 most recent sessions |
 | `/resume <id>` | Reopen a session (a prefix of the id, or `last`) |
@@ -247,6 +250,42 @@ Nvidia develops GPUs, SoCs, and APIs for data science, high-performance computin
 It is headquartered in Santa Clara, California.
 ```
 
+A multi-step question shows the plan, a thought before each call, then the answer from the results:
+
+```
+> compare NVDA and AMD 30d returns vs sentiment
+Plan:
+  1. Get 30-day price returns for NVDA and AMD
+  2. Get 30-day sentiment analysis for NVDA and AMD
+  3. Compare the returns and sentiment for both tickers
+Thought: Retrieve 30-day price returns for NVDA
+⚙ get_prices(start=2026-09-23, ticker=NVDA)  0.9s ✓
+Thought: Retrieve 30-day price returns for AMD
+⚙ get_prices(start=2026-09-23, ticker=AMD)  0.1s ✓
+Thought: Retrieve 30-day sentiment for NVDA
+⚙ get_sentiment(days=30, ticker=NVDA)  1.4s ✓
+Thought: Retrieve 30-day sentiment for AMD
+⚙ get_sentiment(days=30, ticker=AMD)  0.9s ✓
+NVDA:
+- 30d Return: -5.76%
+- Sentiment: Bullish (Mean score: 0.4465)
+AMD:
+- 30d Return: -16.44%
+- Sentiment: Bullish (Mean score: 0.4395)
+...
+
+> /steps
+question: compare NVDA and AMD 30d returns vs sentiment
+plan:
+  1. Get 30-day price returns for NVDA and AMD
+  ...
+step 1  get_prices(start=2026-09-23, ticker=NVDA)  0.93s ok
+        thought: Retrieve 30-day price returns for NVDA
+        result: {"ticker": "NVDA", "interval": "1d", "rows": 23, ..., "return_pct": -5.76, ...
+...
+2 round(s) · 4 step(s) · 6.1k tokens · answered
+```
+
 ### Things to try
 
 | Type this | You should see |
@@ -260,6 +299,8 @@ It is headquartered in Santa Clara, California.
 | `what company is GFS?` | a `get_fundamentals` line, then GLOBALFOUNDRIES, not a guess |
 | `how did my watchlist do this month?` | one `get_prices` per ticker of your profile, without naming them |
 | `/exit`, then `python -m sensai --resume`, then `and what about AMD?` | the conversation goes on, with the data fetched before |
+| `compare NVDA and AMD 30d returns vs sentiment`, then `/steps` | a dim plan, a thought before each of the 4 calls, the answer, then the saved trace |
+| `/trace`, then `what is the P/E of NVDA?` | no plan (1 step is enough), a thought, the result preview and the tokens of each round |
 
 ### Our MCP server on its own
 
@@ -299,9 +340,8 @@ numbers. Each call shows as one line, with a ✓ or the error (see [Usage exampl
 
 A failed call (unknown ticker, bad argument, API down) is sent back to the model as an error
 message, so it can explain it or try something else; the chat never crashes. A question can lead
-to several rounds of calls, up to `max_tool_rounds` (6 by default), after which the model answers
-with what it has. Tool calls and their results are saved with the session, so after `--resume` the
-model still has the data it fetched.
+to several rounds of calls (see [the reasoning loop](#reasoning-loop-a1)). Tool calls and their
+results are saved with the session, so after `--resume` the model still has the data it fetched.
 
 sensai starts every server listed under `mcp_servers` in `config.yaml`. Three are set up:
 
@@ -361,6 +401,32 @@ and is shared by `get_news` and `get_sentiment`. One call returns at most 1000 a
 heavily covered ticker a long window can be cut short: results then include `"truncated": true`
 and `covered_from`, the first day actually covered.
 
+### Reasoning loop (A1)
+
+For a question that needs several steps, the model works in a loop you can follow and audit:
+
+1. **Plan:** it first calls `plan`, a tool sensai handles itself, with the steps it intends to take.
+2. **Act:** each tool call carries a one-sentence `thought` saying why it is made. sensai shows the
+   thought, removes it from the arguments (the MCP servers never see it), and runs the tool.
+3. **Observe and repeat:** the model reads the results, then calls more tools, changes its plan, or
+   answers. A simple question skips the plan and goes straight to the tool.
+
+The plan and the thoughts are shown in dim text. Each question has a budget: `max_steps` tool calls
+(12) and `token_budget` tokens read and written over all its rounds (60,000). When either is used up,
+sensai asks the model one last time, without tools, to answer with what it has. Every question's
+trace (plan, steps, thoughts, result previews, rounds, tokens, why it stopped) is saved with the
+session: `/steps` shows the last one, and `/trace` or `--trace` adds the details live.
+
+The reasoning goes through structured fields, not free text. When the model was asked to write
+"Plan:" and "Thought:" lines before its tool calls, it sometimes wrote the calls as text (nothing
+ran) or drafted an answer with invented numbers before it had any data. If a call still comes as
+text, sensai asks the model once more for a real call, and the made-up text is not kept.
+
+**Model matters for hard questions.** On "which S&P 500 company has the highest trailing P/E?",
+`gemma4:31b` searched twice and gave up, while `gpt-oss:20b` chained 6 steps (searches, a check with
+`get_fundamentals`, a `fetch` of a ranking article) and answered Tesla, citing both sources. Use
+`--model gpt-oss:20b` for multi-step research; the default stays the faster `gemma4:31b`.
+
 ## Your profile
 
 Every field is optional, and empty fields are simply left out.
@@ -406,7 +472,8 @@ the folder.
 | `system_prompt` | Base instructions; today's date and your profile are added after it |
 | `show_thinking` | Whether reasoning models' thinking is shown by default (`true`) |
 | `mcp_servers` | MCP servers to start: `name`, `command`, `args`, optional `env`, `cwd`, `limits` (what its tools can't do, for servers that don't declare it), `enabled: false` to skip one. `python` means the Python running sensai |
-| `max_tool_rounds` | Rounds of tool calls per question before the model must answer (`6`) |
+| `max_steps` | Tool calls per question before the model must answer (`12`) |
+| `token_budget` | Tokens read and written per question, over all its rounds, before the model must answer (`60000`) |
 
 `.env` holds the secrets: `OLLAMA_API_KEY` (required), `MASSIVE_API_KEY` (for news and
 sentiment) and `TAVILY_API_KEY` (for web search). Set `SENSAI_DATA` to store market data somewhere other than `data/`.
@@ -461,7 +528,7 @@ folders instead of your real `~/.sensai` and `data/`.
 | [#3](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/3) | M1 saved sessions and user profile | Done |
 | [#4](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/4) | T1 market data MCP server | Done |
 | [#5](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/5) | T1 tool calling in the chat | Done |
-| [#6](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/6) | A1 multi-step reasoning loop (ReAct) | Planned |
+| [#6](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/6) | A1 multi-step reasoning loop (ReAct) | Done |
 | [#7](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/7) | T2 sandboxed code execution | Planned |
 | [#8](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/8) | M4 research note | Planned |
 | [#9](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/9) | EV1 number checking and evaluation | Planned |
