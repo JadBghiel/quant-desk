@@ -1,7 +1,10 @@
-"""terminal bits: ansi codes, the thinking spinner and the tool call lines"""
+"""terminal bits: ansi codes, the thinking spinner, the tool call lines and file links"""
 
+import base64
+import os
 import threading
 import time
+from pathlib import Path
 
 DIM, RESET, CLEAR_LINE = "\033[2m", "\033[0m", "\r\033[K"
 GREEN, RED = "\033[32m", "\033[31m"
@@ -51,12 +54,46 @@ class Spinner:
         self.out.flush()
 
 
+def file_link(path, tty=True):
+    """path as a terminal link (OSC 8), cmd/ctrl+click opens it, the terminal's own path detection
+    stops at the 1st space and the repo path has 1 -> the link carries the full url, a terminal w/o
+    OSC 8 shows the plain path"""
+    if not tty:
+        return str(path)
+    return f"\033]8;;{Path(path).resolve().as_uri()}\033\\{path}\033]8;;\033\\"
+
+
+# terminals that draw images sent w/ the iTerm2 protocol, VS Code needs terminal.integrated.enableImages
+IMAGE_TERMS = {"vscode", "iTerm.app", "WezTerm"}
+IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif"}
+MAX_IMAGE = 5_000_000  # bytes, a bigger file stays a link
+
+
+def inline_image(path, tty=True, width="60%"):
+    """the image as an iTerm2 escape code the terminal draws in place, "" when it cant -> the link
+    above it is the fallback, a terminal that doesnt know the code ignores it"""
+    path = Path(path)
+    if not tty or os.environ.get("TERM_PROGRAM") not in IMAGE_TERMS or path.suffix.lower() not in IMAGE_EXTS:
+        return ""
+    try:
+        data = path.read_bytes()
+    except OSError:
+        return ""
+    if len(data) > MAX_IMAGE:
+        return ""
+    name = base64.b64encode(path.name.encode()).decode()
+    return (f"\033]1337;File=name={name};size={len(data)};inline=1;width={width};preserveAspectRatio=1:"
+            f"{base64.b64encode(data).decode()}\a")
+
+
 def fmt_args(args, width=70):
-    """{"ticker": "AAPL", "days": 7} -> ticker=AAPL, days=7, cut at width"""
+    """{"ticker": "AAPL", "days": 7} -> ticker=AAPL, days=7, cut at width, a multi line value
+    (the sandbox's code) squeezed on 1 line"""
     if not isinstance(args, dict):
         text = repr(args)
     else:
         text = ", ".join(f"{k}={v}" for k, v in args.items())
+    text = " ".join(text.split())
     return text if len(text) <= width else text[:width - 3] + "..."
 
 

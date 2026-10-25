@@ -10,6 +10,7 @@ model wrote its calls as text (no call went out) and drafted answers w/ invented
 """
 
 import copy
+import json
 import re
 
 PLAN_TOOL = {"type": "function", "function": {
@@ -26,6 +27,8 @@ THOUGHT = {"type": "string", "description": "1 short sentence: why you call this
 ARTIFACT = re.compile(r"<\|?[a-z_]{2,20}\|?>")
 # a tool call written as text instead of a real call, gemma's format
 TEXT_CALL = re.compile(r"<call:\w+")
+# failed tool calls in a row before the tools are cut, eg code that keeps crashing in the sandbox
+MAX_FAILS = 3
 
 
 def rules(tool_names):
@@ -114,7 +117,8 @@ class Trace:
                 "tokens_in": self.tokens_in, "tokens_out": self.tokens_out, "stop": self.stop}
 
 
-STOPS = {"answered": "answered", "steps": "step budget reached", "tokens": "token budget reached"}
+STOPS = {"answered": "answered", "steps": "step budget reached", "tokens": "token budget reached",
+         "failures": f"{MAX_FAILS} failed calls in a row"}
 
 
 def plan_text(steps):
@@ -126,6 +130,20 @@ def plan_text(steps):
 def preview(result, width=200):
     text = " ".join(str(result).split())
     return text if len(text) <= width else text[:width - 3] + "..."
+
+
+def result_files(result):
+    """the `files` a tool result lists (the sandbox's plots), [] for anything else"""
+    try:
+        data = json.loads(result)
+    except (TypeError, ValueError):
+        return []
+    files = data.get("files") if isinstance(data, dict) else None
+    return [str(f) for f in files] if isinstance(files, list) else []
+
+
+def indent(text, n):
+    return "\n".join(" " * n + line for line in text.rstrip().splitlines())
 
 
 def tokens_k(n):
@@ -141,10 +159,17 @@ def format_trace(t):
     if not t["steps"]:
         lines.append("no tool call, answered directly")
     for s in t["steps"]:
-        args = ", ".join(f"{k}={v}" for k, v in s["args"].items()) if isinstance(s["args"], dict) else s["args"]
+        raw = s["args"] if isinstance(s["args"], dict) else {}
+        code = raw.get("code") if isinstance(raw.get("code"), str) else None
+        args = ", ".join(f"{k}={v}" for k, v in raw.items() if k != "code") if raw else s["args"]
+        if code is not None:
+            args = ", ".join(a for a in (args, "code=...") if a)
         lines.append(f"step {s['n']}  {s['tool']}({args})  {s['secs']}s {'ok' if s['ok'] else 'failed'}")
         if s.get("thought"):
             lines.append(f"        thought: {s['thought']}")
+        if code is not None:
+            lines.append("        code:")
+            lines.append(indent(code, 10))
         lines.append(f"        result: {s['result']}")
     total = t["tokens_in"] + t["tokens_out"]
     lines.append(f"{t['rounds']} round(s) · {len(t['steps'])} step(s) · {tokens_k(total)} tokens · "
