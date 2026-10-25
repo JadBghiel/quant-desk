@@ -4,8 +4,8 @@ A research assistant for quantitative developers and researchers, built from scr
 top of the Ollama HTTP API, without any LLM framework.
 
 The goal is an agent that can take a question like *"Is NVDA moving more on news or on the market
-lately?"*, fetch prices, news and sentiment, write and run its own analysis code, and check every
-number it reports against the data it fetched. This README describes what works today; the
+lately?"*, fetch prices, news and sentiment, write and run its own analysis code, and compare each
+number it reports with the data it fetched. This README describes what works today; the
 [project status](#project-status) section lists what comes next.
 
 ## Setup
@@ -28,8 +28,17 @@ cp .env.example .env
 `requirements.txt` includes [uv](https://docs.astral.sh/uv/), which sensai uses to launch the
 `fetch` MCP server in its own isolated environment (it is downloaded on the first run).
 
-The first time you start sensai, it offers to set up your profile (see [Your profile](#your-profile)).
-Every question is optional.
+Optional, for the code sandbox (see [Analysis code in a sandbox](#analysis-code-in-a-sandbox-t2)):
+with [Docker](https://docs.docker.com/get-docker/) running, build its image once (about 800 MB):
+
+```bash
+docker build -t sensai-sandbox sandbox/
+```
+
+Without Docker, the code runs as a local Python process with fewer limits.
+
+The first time you start sensai, it offers to set up your profile (see [Your profile](#your-profile)),
+and all its questions are optional.
 
 ## Running it
 
@@ -40,41 +49,41 @@ python -m sensai --resume               # reopen your last session
 python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of its id is enough)
 ```
 
-| Flag | Description |
-|---|---|
-| `--model MODEL` | Model to use, overrides `config.yaml` |
-| `--host HOST` | Ollama host, overrides `config.yaml` (e.g. `http://localhost:11434` for a local Ollama) |
-| `--config CONFIG` | Path to the config file (default: `config.yaml`) |
-| `--resume [ID]` | Reopen a saved session: the last one without an id, or the one whose id starts with `ID` |
-| `--trace` | Show the details of each reasoning step: tool results and tokens used |
-| `--version` | Print the version |
-| `-h`, `--help` | Show the help |
+| Flag                | Description                                                                                 |
+| ------------------- | ------------------------------------------------------------------------------------------- |
+| `--model MODEL`   | Model to use, overrides `config.yaml`                                                     |
+| `--host HOST`     | Ollama host, overrides `config.yaml` (e.g. `http://localhost:11434` for a local Ollama) |
+| `--config CONFIG` | Path to the config file (default: `config.yaml`)                                          |
+| `--resume [ID]`   | Reopen a saved session: the last one without an id, or the one whose id starts with `ID`  |
+| `--trace`         | Show the details of each reasoning step: tool results and tokens used                       |
+| `--version`       | Print the version                                                                           |
+| `-h`, `--help`  | Show the help                                                                               |
 
 ## Commands in the chat
 
-| Command | Description |
-|---|---|
-| `/help` | List the commands |
-| `/model` | Show the current model and the available ones |
-| `/model <name>` | Switch model; the conversation is kept |
-| `/think` | Show or hide the model's thinking (reasoning models only) |
-| `/tools` | List the MCP servers and the tools the model can call |
-| `/trace` | Show or hide the details of each step (tool results, tokens used) |
-| `/steps` | Print the trace of the last answer: the plan, every step with its thought and result, the tokens |
-| `/clear` | Start a new session; the current one stays saved |
-| `/sessions` | List the 10 most recent sessions |
-| `/resume <id>` | Reopen a session (a prefix of the id, or `last`) |
-| `/profile` | Show your profile, with numbered notes |
-| `/profile setup` | Answer the profile questions again (Enter keeps a value, `-` clears it) |
-| `/profile edit` | Open the profile file in your editor (`$VISUAL`, `$EDITOR`, then `nano` or `vi`) |
-| `/remember <fact>` | Add a note sensai always keeps in mind |
-| `/forget <n>` | Remove note number `n` |
-| `/exit` | Quit (Ctrl+D works too) |
+| Command              | Description                                                                                      |
+| -------------------- | ------------------------------------------------------------------------------------------------ |
+| `/help`            | List the commands                                                                                |
+| `/model`           | Show the current model and the available ones                                                    |
+| `/model <name>`    | Switch model; the conversation is kept                                                           |
+| `/think`           | Show or hide the model's thinking (reasoning models only)                                        |
+| `/tools`           | List the MCP servers and the tools the model can call                                            |
+| `/trace`           | Show or hide the details of each step (tool results, tokens used)                                |
+| `/steps`           | Print the trace of the last answer: the plan, every step with its thought and result, the tokens |
+| `/clear`           | Start a new session; the current one stays saved                                                 |
+| `/sessions`        | List the 10 most recent sessions                                                                 |
+| `/resume <id>`     | Reopen a session (a prefix of the id, or `last`)                                               |
+| `/profile`         | Show your profile, with numbered notes                                                           |
+| `/profile setup`   | Answer the profile questions again (Enter keeps a value, `-` clears it)                        |
+| `/profile edit`    | Open the profile file in your editor (`$VISUAL`, `$EDITOR`, then `nano` or `vi`)         |
+| `/remember <fact>` | Add a note sensai always keeps in mind                                                           |
+| `/forget <n>`      | Remove note number `n`                                                                         |
+| `/exit`            | Quit (Ctrl+D works too)                                                                          |
 
-**Ctrl+C** during an answer stops it and returns to the prompt. The interrupted question is not
-kept in the conversation, so you can simply ask again.
+**Ctrl+C** during an answer stops it and returns to the prompt. The interrupted question is
+dropped from the conversation, so you can ask it again.
 
-## Usage examples
+# Usage examples
 
 Real sessions on the default model `gemma4:31b`. Long answers are shortened with `...`.
 
@@ -96,7 +105,14 @@ streams in dim text before the answer. `/think` hides the thinking and keeps onl
 python -m sensai --model gpt-oss:20b
 ```
 
-Mistakes end in a one-line message, never a traceback:
+Switch model in the middle of a conversation, the history stays:
+
+```
+> /model gpt-oss:20b
+switched to gpt-oss:20b, history kept
+```
+
+Mistakes end in a one-line message instead of a traceback:
 
 ```
 $ python -m sensai --model gpt-oss:20
@@ -107,11 +123,11 @@ empty input, type a question or /help
 ```
 
 Ctrl+C during an answer prints `[interrupted]` and returns to the prompt; the question is
-dropped from the history, so you can simply ask again.
+dropped from the history, so you can ask it again.
 
 ### Profile and saved sessions (M1)
 
-The first start offers to set up your profile. Every question can be skipped with Enter:
+The first start offers to set up your profile. Enter skips any question:
 
 ```
 first time here. set up your profile now? every question is optional [Y/n] y
@@ -138,7 +154,7 @@ style: concise, formula before the number
 noted (1 note(s)), /profile to see them
 ```
 
-Every session is saved after each answer. List them, close sensai, and pick up where you left:
+Sessions are saved after each answer. List them, close sensai, and pick up where you left off:
 
 ```
 > /sessions
@@ -150,11 +166,18 @@ you: open the most relevant AAPL article with the fetch tool and summarize it in
 sensai: Apple is showing strong relative performance and projected earnings growth ...
 ```
 
-The profile is given to the model in every session, so you never repeat it:
+The profile goes to the model at the start of each session, so there is no need to repeat it:
 
 ```
 > and for my watchlist?
 NVDA, AMD, TSM; Focus: NVDA earnings
+```
+
+`/clear` starts a fresh session and keeps the previous one on disk:
+
+```
+> /clear
+new session 20261027-143843, 20261027-143840 stays saved (/resume 20261027-143840)
 ```
 
 ### Market data and tool calling (T1)
@@ -166,6 +189,7 @@ NVDA, AMD, TSM; Focus: NVDA earnings
 quant-data: get_prices, get_fundamentals, get_news, get_sentiment
 fetch: fetch
 web: web_search
+sandbox: run_python
 ```
 
 The model decides which tools it needs, and each call shows as one line:
@@ -186,7 +210,7 @@ The last closing price for AAPL was $336.64 (as of October 9, 2026). ...
 Apple is showing strong relative performance ... Zacks Rank #3 (Hold) due to a high valuation ...
 ```
 
-(`get_news` took 0.0 s: it reused the Massive call `get_sentiment` had just made.)
+(`get_news` took 0.0 s: it reused the Massive call `get_sentiment` had made.)
 
 Without naming a ticker, it uses your profile's watchlist and benchmark:
 
@@ -214,7 +238,7 @@ A failed call is shown in red and handed back to the model, which explains it:
 I cannot find the P/E ratio for ZZZQX as there are no fundamental data available for this ticker. ...
 ```
 
-Company names come from a tool, not from the model's memory:
+Company names come from a tool call:
 
 ```
 > what company is GFS and how did it do over the last 30 days?
@@ -223,6 +247,8 @@ Company names come from a tool, not from the model's memory:
 GFS is GLOBALFOUNDRIES Inc., a company in the Technology sector and Semiconductors industry.
 Over the last 30 days (from 2026-09-14 to 2026-10-09), the stock returned +11.07% ...
 ```
+
+### Web search and web pages (T3)
 
 What no tool covers goes to web search, with the sources cited:
 
@@ -241,7 +267,7 @@ However, based on a Yahoo Finance snapshot for the November 13, 2026, 150.00 cal
 volatility was 80.37% as of the close on October 9, 2026. ...
 ```
 
-`fetch` reads any web page:
+`fetch` reads a web page in full:
 
 ```
 > read https://en.wikipedia.org/wiki/Nvidia and tell me in 2 lines what Nvidia makes and where it is headquartered
@@ -249,6 +275,8 @@ volatility was 80.37% as of the close on October 9, 2026. ...
 Nvidia develops GPUs, SoCs, and APIs for data science, high-performance computing, and artificial intelligence.
 It is headquartered in Santa Clara, California.
 ```
+
+### Multi-step reasoning (A1)
 
 A multi-step question shows the plan, a thought before each call, then the answer from the results:
 
@@ -286,29 +314,126 @@ step 1  get_prices(start=2026-09-23, ticker=NVDA)  0.93s ok
 2 round(s) · 4 step(s) · 6.1k tokens · answered
 ```
 
+`/trace` (or `--trace` at startup) adds the details live: the tokens of each round and a preview of
+each result. A 1-step question skips the plan:
+
+```
+> /trace
+step details shown
+
+> what is the P/E of NVDA?
+  round 1 · 2.3k in · 32 out · 2.3k of 60.0k used
+Thought: Retrieving the P/E ratio for NVDA.
+⚙ get_fundamentals(ticker=NVDA)  1.7s ✓
+    → {"ticker": "NVDA", "name": "NVIDIA Corporation", "sector": "Technology", ...
+The trailing P/E of NVDA is 27.574 and the forward P/E is 13.705.
+  round 2 · 2.5k in · 36 out · 4.9k of 60.0k used
+```
+
+When a question uses up its budget, a dim line says so (`[budget reached: 12 steps, answering w/ what it has]`) and the model answers with the data it already has.
+
+### Analysis code in a sandbox (T2)
+
+The model writes Python on the CSV files the market tools saved and runs it with `run_python`. The
+number comes from the code's output, and plots are saved under `out/`. With `--trace`, the code shows
+under the thought:
+
+```
+> compute the rolling 30 day correlation between NVDA daily returns and its daily news sentiment
+  over the last 6 months, give me the latest value and plot it
+Plan:
+  1. Get daily prices for NVDA for the last 6 months.
+  2. Get daily news sentiment for NVDA for the last 6 months.
+  3. Use run_python to calculate daily returns from prices, merge with sentiment data, compute the
+     rolling 30-day correlation, and plot the result.
+Thought: Getting NVDA daily prices for the last 6 months to calculate returns.
+⚙ get_prices(start=2026-04-28, ticker=NVDA)  2.3s ✓
+Thought: Getting NVDA daily news sentiment for the last 6 months.
+⚙ get_sentiment(days=180, ticker=NVDA)  3.5s ✓
+Thought: Computing the rolling 30-day correlation between NVDA returns and sentiment and saving the plot.
+    import pandas as pd
+    import matplotlib.pyplot as plt
+    prices = pd.read_csv('.../data/prices/NVDA_1d_2026-04-28_2026-10-28.csv')
+    sentiment = pd.read_csv('.../data/sentiment/NVDA_2026-05-01_2026-10-28.csv')
+    ...
+    rolling_corr = df['returns'].rolling(window=30).corr(df['mean_score'])
+    print(f"Latest rolling 30-day correlation: {rolling_corr.iloc[-1]:.4f}")
+    ...
+    plt.savefig('nvda_sentiment_corr.png')
+⚙ run_python(code=import pandas as pd import matplotlib.pyplot as plt # Load dat...)  0.7s ✓
+    ↳ .../out/20261028-181324-11d7/nvda_sentiment_corr.png
+The latest rolling 30-day correlation between NVDA daily returns and its daily news sentiment is 0.2601.
+
+saved:
+  /Users/.../out/20261028-181324-11d7/nvda_sentiment_corr.png
+  [the chart, drawn in the terminal]
+```
+
+Since the model writes matplotlib code, it can chart anything the data allows, with no chart feature
+written in sensai: a price since January, two stocks on one axis, a correlation heatmap, an RSI under
+a price. Two real requests:
+
+```
+> can u make a chart about HOOD YTD stock price
+Plan:
+  1. Get historical daily prices for HOOD from 2026-01-01 to today.
+  2. Use Python to plot the closing prices for the YTD period and save the chart.
+⚙ get_prices(start=2026-01-01, ticker=HOOD)  0.8s ✓
+⚙ run_python(code=import pandas as pd import matplotlib.pyplot as plt # Load the...)  1.9s ✓
+The stock has seen a YTD return of -21.39%, moving from a first close of 115.21 on 2026-01-02 to
+90.57 on 2026-10-28. During this period, it reached a high of 126.74 and a low of 63.515. ...
+
+saved:
+  /Users/.../out/20261028-182926-0b5f/hood_ytd_price.png
+
+> (on SIVE.ST, a Swedish stock) ok do 1 and 2   [1 = volatility, 2 = trend and momentum]
+⚙ run_python(code=import pandas as pd import numpy as np import matplotlib.pyplo...)  0.8s ✓
+**1. Volatility Analysis**
+*   **Annualized Volatility: 186.00%** ...
+**2. Trend & Momentum**
+*   The price is trading below both its 20-day SMA (**26.92 SEK**) and its 50-day SMA (**29.18 SEK**).
+*   The 14-day Relative Strength Index (RSI) is **21.35** ...
+
+saved:
+  /Users/.../out/20261028-182156-62a2/sive_analysis.png      price with both moving averages, RSI below
+```
+
+The second one did 2 analyses and a 2-panel chart in a single run. The 186% volatility is right: the
+stock moved +60% on June 2 and +47% on May 4.
+
+If the code fails, the model gets the traceback and fixes its code. After 3 failed tool calls in a
+row, sensai stops the tools and the model says what went wrong.
+
+This example also shows a limit. Massive returns at most 1000 articles per call, so the sentiment
+covered September 4 to October 28, a shorter window than the 6 months asked (the tool result says so, with
+`truncated` and `covered_from`), and the model did not mention it.
+
 ### Things to try
 
-| Type this | You should see |
-|---|---|
-| `last close of AAPL and what do the news say` | 2 `⚙` lines (`get_prices`, `get_news`), then the price and a news summary |
-| `what is the news sentiment on NVDA over the last 7 days, and why?` | `get_sentiment` (and maybe `get_news`), a label, a score and the reasons |
-| `what is the P/E of ZZZQX?` | a red `✗ no fundamentals for ZZZQX` line, then the model says the ticker is unknown |
-| `read https://en.wikipedia.org/wiki/Nvidia and tell me where it is headquartered` | a `fetch` line, then "Santa Clara, California" |
-| `what did the fed decide at its last meeting?` | a `web_search` line, then the decision and the source URL |
-| `what is the implied volatility of NVDA options expiring next month?` | no tool covers options, so a `web_search` line, then what the sources say |
-| `what company is GFS?` | a `get_fundamentals` line, then GLOBALFOUNDRIES, not a guess |
-| `how did my watchlist do this month?` | one `get_prices` per ticker of your profile, without naming them |
-| `/exit`, then `python -m sensai --resume`, then `and what about AMD?` | the conversation goes on, with the data fetched before |
-| `compare NVDA and AMD 30d returns vs sentiment`, then `/steps` | a dim plan, a thought before each of the 4 calls, the answer, then the saved trace |
-| `/trace`, then `what is the P/E of NVDA?` | no plan (1 step is enough), a thought, the result preview and the tokens of each round |
+| Type this                                                                           | You should see                                                                         |
+| ----------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| `last close of AAPL and what do the news say`                                     | 2 `⚙` lines (`get_prices`, `get_news`), then the price and a news summary       |
+| `what is the news sentiment on NVDA over the last 7 days, and why?`               | `get_sentiment` (and maybe `get_news`), a label, a score and the reasons           |
+| `what is the P/E of ZZZQX?`                                                       | a red `✗ no fundamentals for ZZZQX` line, then the model says the ticker is unknown |
+| `read https://en.wikipedia.org/wiki/Nvidia and tell me where it is headquartered` | a `fetch` line, then "Santa Clara, California"                                       |
+| `what did the fed decide at its last meeting?`                                    | a `web_search` line, then the decision and the source URL                            |
+| `what is the implied volatility of NVDA options expiring next month?`             | no tool covers options, so a `web_search` line, then what the sources say            |
+| `what company is GFS?`                                                            | a `get_fundamentals` line, then GLOBALFOUNDRIES from the tool result                 |
+| `how did my watchlist do this month?`                                             | one `get_prices` per ticker of your profile, without naming them                     |
+| `/exit`, then `python -m sensai --resume`, then `and what about AMD?`         | the conversation goes on, with the data fetched before                                 |
+| `compare NVDA and AMD 30d returns vs sentiment`, then `/steps`                  | a dim plan, a thought before each of the 4 calls, the answer, then the saved trace     |
+| `/trace`, then `what is the P/E of NVDA?`                                       | no plan (1 step is enough), a thought, the result preview and the tokens of each round |
+| `annualized volatility of AMD over the last year, with a plot of the daily returns` | `get_prices`, a `run_python` line, the number from the code, then the plot under the answer |
+| `can u make a chart about HOOD YTD stock price` | `get_prices` from January 1, a `run_python` line, the return, high and low, then the chart under the answer |
 
 ### Our MCP server on its own
 
-The market data server works with any MCP client, not only sensai. To try it in the
+The market data server works with any MCP client. To try it in the
 [MCP inspector](https://github.com/modelcontextprotocol/inspector):
 
 ```bash
 npx @modelcontextprotocol/inspector .venv/bin/python -m sensai.servers.quant_data
+npx @modelcontextprotocol/inspector .venv/bin/python -m sensai.servers.sandbox
 ```
 
 ## Features
@@ -319,18 +444,18 @@ Answers are streamed as they are generated, and the whole conversation is sent b
 on every turn, so follow-up questions work. When a reasoning model thinks before answering, a
 spinner with a timer shows it is working, and its thinking streams in dim text (`/think` hides it).
 
-Every failure ends in a one-line message, never a traceback: unreachable host, missing or invalid
+Failures end in a one-line message instead of a traceback: unreachable host, missing or invalid
 API key, unknown model (with the closest names suggested), a model outside the free tier, quota
 reached, timeout, or a connection lost in the middle of an answer. The API key and the model name
 are checked at startup, before the first question.
 
 ### Saved sessions and a user profile (M1)
 
-Every session is saved after each answer, so closing the terminal loses nothing. `--resume` or
+Sessions are saved after each answer, so closing the terminal loses nothing. `--resume` or
 `/resume` picks a conversation up where it stopped.
 
-The profile tells sensai who you are and how you work. It is given to the model at the start of
-every session, together with today's date, so you never have to repeat it.
+The profile tells sensai who you are and how you work. It goes to the model at the start of each
+session, together with today's date, so there is no need to repeat it.
 
 ### Tool calling over MCP (T1)
 
@@ -339,67 +464,69 @@ The model decides on its own when it needs data: it asks for a tool, sensai runs
 numbers. Each call shows as one line, with a ✓ or the error (see [Usage examples](#usage-examples)).
 
 A failed call (unknown ticker, bad argument, API down) is sent back to the model as an error
-message, so it can explain it or try something else; the chat never crashes. A question can lead
+message, so it can explain it or try something else, and the chat keeps going. A question can lead
 to several rounds of calls (see [the reasoning loop](#reasoning-loop-a1)). Tool calls and their
 results are saved with the session, so after `--resume` the model still has the data it fetched.
 
-sensai starts every server listed under `mcp_servers` in `config.yaml`. Three are set up:
+sensai starts every server listed under `mcp_servers` in `config.yaml`. Four are set up:
 
-| Server | Tools | What for |
-|---|---|---|
-| `quant-data` (ours, `sensai/servers/quant_data.py`) | `get_prices`, `get_fundamentals`, `get_news`, `get_sentiment` | Market data, see below |
-| [`fetch`](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch) (official) | `fetch` | Reads a web page as Markdown, e.g. the full article behind a headline. It respects `robots.txt`, so some news sites refuse it |
-| `web` (ours, `sensai/servers/web.py`) | `web_search` | Live web search, see [Web search](#web-search-t3) |
+| Server                                                                                     | Tools                                                                 | What for                                                                                                                        |
+| ------------------------------------------------------------------------------------------ | --------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------- |
+| `quant-data` (ours, `sensai/servers/quant_data.py`)                                    | `get_prices`, `get_fundamentals`, `get_news`, `get_sentiment` | Market data, see below                                                                                                          |
+| [`fetch`](https://github.com/modelcontextprotocol/servers/tree/main/src/fetch) (official) | `fetch`                                                             | Reads a web page as Markdown, e.g. the full article behind a headline. It respects `robots.txt`, so some news sites refuse it |
+| `web` (ours, `sensai/servers/web.py`)                                                  | `web_search`                                                        | Live web search, see [Web search](#web-search-t3)                                                                                |
+| `sandbox` (ours, `sensai/servers/sandbox.py`) | `run_python` | Runs the model's analysis code, see [Code sandbox](#code-sandbox-t2) |
 
-A server that fails to start is a warning, not a crash: the other tools still work. Servers' own
-logs go to `~/.sensai/logs/`, never into the chat.
+A server that fails to start shows a warning, and the other tools keep working. Servers' own logs
+go to `~/.sensai/logs/`, out of the chat.
 
-**The model knows what its tools can't do.** Tool descriptions say what each tool does, not what
-it doesn't cover, so a model tends to fill the gaps from memory (it once called GFS "Global
-Payments"; GFS is GlobalFoundries). Each server declares its limits in its MCP `instructions`
-(for a server we don't control, like `fetch`, in `config.yaml` under `limits:`), and sensai adds
-them to the system prompt with a few rules: names and numbers come from tools, a failed tool is
-reported, and what no tool covers goes to web search instead of being guessed.
+The model also knows what its tools can't do. Tool descriptions say what each tool does and leave
+out what it doesn't cover, and a model tends to fill those gaps from memory (it once called GFS
+"Global Payments"; GFS is GlobalFoundries). Each server declares its limits in its MCP
+`instructions` (for a server we don't control, like `fetch`, in `config.yaml` under `limits:`),
+and sensai adds them to the system prompt with a few rules: names and numbers come from tools, a
+failed tool is reported, and what no tool covers goes to web search.
 
 ### Web search (T3)
 
-`web_search` runs a live query through [Tavily](https://tavily.com) and returns, for each result,
+`web_search` sends a live query to [Tavily](https://tavily.com) and returns, for each result,
 its title, URL, publish date when known, and a short snippet. The model uses it for what the market
 tools don't cover (options, macro data, recent announcements, non-US news) or when a data tool
 fails, cites the URLs it used, and can open a result with `fetch` to read the full page.
 
-| Argument | Description |
-|---|---|
-| `query` | A short search engine query |
-| `topic` | `general` (default), `news` (recent articles, with dates) or `finance` |
-| `days` | Only results from the last N days |
-| `max_results` | 1 to 10, default 5 |
+| Argument        | Description                                                                  |
+| --------------- | ---------------------------------------------------------------------------- |
+| `query`       | A short search engine query                                                  |
+| `topic`       | `general` (default), `news` (recent articles, with dates) or `finance` |
+| `days`        | Only results from the last N days                                            |
+| `max_results` | 1 to 10, default 5                                                           |
 
 Searches are cached for an hour, and each snippet is capped at 500 characters so a search can't
-fill the context. Tavily can also write an answer with its own LLM; sensai never asks for it, since
-every model call must go through Ollama: the model reads the sources and writes the answer itself.
+fill the context. Tavily can also write an answer with its own LLM. sensai leaves that option off,
+since all model calls must go through Ollama: the model reads the sources and writes the answer
+itself.
 
 ### Market data tools (our MCP server)
 
-Our server runs on its own over stdio, so any MCP client can use it, not only sensai.
+Our server runs on its own over stdio, so any MCP client can use it.
 
-| Tool | Source | Returns |
-|---|---|---|
-| `get_prices(ticker, start, end, interval)` | Yahoo Finance | First and last close, return %, high, low, average volume, and a CSV with every bar |
-| `get_fundamentals(ticker)` | Yahoo Finance | Name, sector, industry, price, market cap, P/E, beta, dividend yield (%), 52 week range, earnings date |
-| `get_news(ticker, days, limit)` | Massive (ex Polygon.io) | Recent articles, each with its sentiment towards the ticker and the reason for it |
-| `get_sentiment(ticker, days)` | Massive (ex Polygon.io) | Mean sentiment (positive 1, neutral 0, negative -1) and its label, counts per sentiment, and a CSV of the daily series |
+| Tool                                         | Source                  | Returns                                                                                                                |
+| -------------------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------- |
+| `get_prices(ticker, start, end, interval)` | Yahoo Finance           | First and last close, return %, high, low, average volume, and a CSV with every bar                                    |
+| `get_fundamentals(ticker)`                 | Yahoo Finance           | Name, sector, industry, price, market cap, P/E, beta, dividend yield (%), 52 week range, earnings date                 |
+| `get_news(ticker, days, limit)`            | Massive (ex Polygon.io) | Recent articles, each with its sentiment towards the ticker and the reason for it                                      |
+| `get_sentiment(ticker, days)`              | Massive (ex Polygon.io) | Mean sentiment (positive 1, neutral 0, negative -1) and its label, counts per sentiment, and a CSV of the daily series |
 
-Tools return short summaries rather than full tables, to keep the model's context small; the full
-data is saved as CSV or JSON in `data/` (`prices/`, `news/`, `sentiment/`).
+Tools return short summaries to keep the model's context small; the full data is saved as CSV or
+JSON in `data/` (`prices/`, `news/`, `sentiment/`).
 
-Every call is cached on disk in `data/cache/`: past prices forever, prices including today for an
+Calls are cached on disk in `data/cache/`: past prices forever, prices including today for an
 hour, fundamentals for a day, news for 6 hours. If a source fails (rate limit, no connection), the
 last cached value is returned, marked `"stale": true`, even if it was fetched on an earlier day.
 Massive's free plan allows 5 calls a minute, and one call covers a ticker's last 30 days of news
 and is shared by `get_news` and `get_sentiment`. One call returns at most 1000 articles, so for a
 heavily covered ticker a long window can be cut short: results then include `"truncated": true`
-and `covered_from`, the first day actually covered.
+and `covered_from`, the first day covered.
 
 ### Reasoning loop (A1)
 
@@ -407,38 +534,84 @@ For a question that needs several steps, the model works in a loop you can follo
 
 1. **Plan:** it first calls `plan`, a tool sensai handles itself, with the steps it intends to take.
 2. **Act:** each tool call carries a one-sentence `thought` saying why it is made. sensai shows the
-   thought, removes it from the arguments (the MCP servers never see it), and runs the tool.
+   thought, removes it from the arguments (the MCP servers don't see it), and calls the tool.
 3. **Observe and repeat:** the model reads the results, then calls more tools, changes its plan, or
    answers. A simple question skips the plan and goes straight to the tool.
 
 The plan and the thoughts are shown in dim text. Each question has a budget: `max_steps` tool calls
 (12) and `token_budget` tokens read and written over all its rounds (60,000). When either is used up,
-sensai asks the model one last time, without tools, to answer with what it has. Every question's
-trace (plan, steps, thoughts, result previews, rounds, tokens, why it stopped) is saved with the
+sensai asks the model one last time, without tools, to answer with what it has. The same happens
+after 3 failed tool calls in a row, and the model is asked to say what failed. The trace of each
+question (plan, steps, thoughts, result previews, rounds, tokens, why it stopped) is saved with the
 session: `/steps` shows the last one, and `/trace` or `--trace` adds the details live.
 
-The reasoning goes through structured fields, not free text. When the model was asked to write
-"Plan:" and "Thought:" lines before its tool calls, it sometimes wrote the calls as text (nothing
-ran) or drafted an answer with invented numbers before it had any data. If a call still comes as
-text, sensai asks the model once more for a real call, and the made-up text is not kept.
+The plan and the thoughts are structured fields: a tool and an argument. An earlier version asked
+the model to write "Plan:" and "Thought:" lines before its tool calls; it sometimes wrote the calls
+as text (no call went out) or drafted an answer with invented numbers before it had any data. If a
+call still comes as text, sensai asks the model once more for a real call and drops the made-up
+text.
 
-**Model matters for hard questions.** On "which S&P 500 company has the highest trailing P/E?",
+The model matters for hard questions. On "which S&P 500 company has the highest trailing P/E?",
 `gemma4:31b` searched twice and gave up, while `gpt-oss:20b` chained 6 steps (searches, a check with
 `get_fundamentals`, a `fetch` of a ranking article) and answered Tesla, citing both sources. Use
 `--model gpt-oss:20b` for multi-step research; the default stays the faster `gemma4:31b`.
 
+### Code sandbox (T2)
+
+Language models are unreliable at arithmetic over hundreds of rows. `run_python` lets the model
+write the calculation instead: it reads the CSV files at the `path` the market tools return, prints
+the numbers it needs, and saves plots. It gets back the printed output, the files it saved, or the
+traceback when the code fails. Charts come with it: any plot matplotlib can draw, with no chart code
+in sensai itself.
+
+| | Docker (when the `sensai-sandbox` image is built) | Local process (fallback) |
+|---|---|---|
+| Network | none | not blocked |
+| Limits | 1 CPU, 512 MB of memory, 30 s per run | 30 s and 30 s of CPU per run; memory isn't capped |
+| `data/` | read only | readable and writable |
+| Libraries | pandas, numpy, scipy, statsmodels, matplotlib | the same, from `requirements.txt` |
+
+Both run without the API keys from `.env`. sensai picks Docker when the image exists; set
+`SENSAI_SANDBOX` to `docker` or `subprocess` to force one. The server tells the model which one is
+running, with its limits.
+
+Each run gets its own folder in `out/` (named after its start time, e.g. `out/20261028-181324-11d7/`)
+with the code saved as `script.py` next to what it produced. The data folder is mounted at the same
+path inside the container, so the file paths the market tools return work in both modes.
+
+The model's code shows with `/trace` or `--trace`, and in `/steps`. Without them, the chat shows one
+line per run.
+
+The files a question produced are listed under its answer, with or without `/trace`:
+
+```
+The stock has seen a YTD return of -21.39% ...
+
+saved:
+  /Users/.../out/20261028-182926-0b5f/hood_ytd_price.png
+  [the chart, drawn here]
+```
+
+Each path is a terminal link: Cmd+click (Ctrl+click on Linux and Windows) opens the file, in VS
+Code's image preview when sensai runs in its terminal. Images are also drawn right under their link
+in iTerm2, WezTerm and VS Code. If VS Code shows the link but no image, turn on "Terminal ›
+Integrated: Enable Images" in its settings (`Cmd+,`, search "enable images"). It's a setting, not
+a shell command.
+
+Terminals without link or image support, like macOS Terminal.app, show the plain path.
+
 ## Your profile
 
-Every field is optional, and empty fields are simply left out.
+All fields are optional, and empty ones are left out.
 
-| Field | Example |
-|---|---|
-| `name` | Jad |
-| `sectors` | semiconductors, AI hardware |
-| `watchlist` | NVDA, AMD, TSM |
-| `benchmark` | SPY |
-| `style` | concise, formula before the number |
-| `notes` | *only liquid large caps*, anything sensai should always keep in mind |
+| Field         | Example                                                                |
+| ------------- | ---------------------------------------------------------------------- |
+| `name`      | Jad                                                                    |
+| `sectors`   | semiconductors, AI hardware                                            |
+| `watchlist` | NVDA, AMD, TSM                                                         |
+| `benchmark` | SPY                                                                    |
+| `style`     | concise, formula before the number                                     |
+| `notes`     | *only liquid large caps*, anything sensai should always keep in mind |
 
 Fill it with the first-run setup or `/profile setup`, change it with `/profile edit`, and add
 notes on the fly with `/remember`.
@@ -446,14 +619,14 @@ notes on the fly with `/remember`.
 ## Your data
 
 Everything personal is stored in a folder in your home directory, outside the repository, so it
-can never be committed by mistake:
+can't be committed by mistake:
 
 ```
 ~/.sensai/
 ├── profile.yaml
 ├── sessions/
 │   └── 20260928-143012.json    one file per session, named after its start time
-└── logs/                       MCP servers' logs (quant-data.log, fetch.log, web.log, mcp.log)
+└── logs/                       MCP servers' logs (quant-data.log, fetch.log, web.log, sandbox.log, mcp.log)
 ```
 
 The folder is only readable by your user. Set `SENSAI_HOME` to use another folder, for instance a
@@ -464,19 +637,26 @@ the folder.
 
 `config.yaml` holds the project settings:
 
-| Key | Description |
-|---|---|
-| `model` | Default model (`gemma4:31b`) |
-| `ollama.host` | Ollama API host (`https://ollama.com`) |
-| `ollama.timeout` | Seconds to wait for data before giving up (`120`) |
-| `system_prompt` | Base instructions; today's date and your profile are added after it |
-| `show_thinking` | Whether reasoning models' thinking is shown by default (`true`) |
-| `mcp_servers` | MCP servers to start: `name`, `command`, `args`, optional `env`, `cwd`, `limits` (what its tools can't do, for servers that don't declare it), `enabled: false` to skip one. `python` means the Python running sensai |
-| `max_steps` | Tool calls per question before the model must answer (`12`) |
-| `token_budget` | Tokens read and written per question, over all its rounds, before the model must answer (`60000`) |
+| Key                | Description                                                                                                                                                                                                                           |
+| ------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `model`          | Default model (`gemma4:31b`)                                                                                                                                                                                                        |
+| `ollama.host`    | Ollama API host (`https://ollama.com`)                                                                                                                                                                                              |
+| `ollama.timeout` | Seconds to wait for data before giving up (`120`)                                                                                                                                                                                   |
+| `system_prompt`  | Base instructions; today's date and your profile are added after it                                                                                                                                                                   |
+| `show_thinking`  | Whether reasoning models' thinking is shown by default (`true`)                                                                                                                                                                     |
+| `mcp_servers`    | MCP servers to start: `name`, `command`, `args`, optional `env`, `cwd`, `limits` (what its tools can't do, for servers that don't declare it), `enabled: false` to skip one. `python` means the Python running sensai |
+| `max_steps`      | Tool calls per question before the model must answer (`12`)                                                                                                                                                                         |
+| `token_budget`   | Tokens read and written per question, over all its rounds, before the model must answer (`60000`)                                                                                                                                   |
 
 `.env` holds the secrets: `OLLAMA_API_KEY` (required), `MASSIVE_API_KEY` (for news and
-sentiment) and `TAVILY_API_KEY` (for web search). Set `SENSAI_DATA` to store market data somewhere other than `data/`.
+sentiment) and `TAVILY_API_KEY` (for web search).
+
+| Environment variable | Description |
+|---|---|
+| `SENSAI_HOME` | Folder for your profile, sessions and logs (default `~/.sensai`) |
+| `SENSAI_DATA` | Folder for market data and its cache (default `data/`) |
+| `SENSAI_OUT` | Folder for what the sandbox runs produce (default `out/`) |
+| `SENSAI_SANDBOX` | `auto` (default: Docker when its image is built), `docker` or `subprocess` |
 
 ## Models
 
@@ -489,25 +669,28 @@ every week. Some models listed by `/model` are paid only.
 
 ## Troubleshooting
 
-| Message | What to do |
-|---|---|
-| `OLLAMA_API_KEY is missing, set it in .env` | Copy `.env.example` to `.env` and add your key |
-| `OLLAMA_API_KEY missing or invalid, check .env` | The key was rejected: create a new one on ollama.com |
-| `model X not available on ..., closest: ...` | Check the spelling, or run `/model` to list the models |
-| `this model isnt in the free tier` | Pick another model; this one needs a paid plan |
-| `cloud quota hit, wait for the reset` | The free tier limit is reached; it resets after 5 hours (or weekly) |
-| `can't reach ..., check the connection` | Check your internet connection or the `--host` value |
-| `connection lost mid answer` | Ask again; the interrupted question was not kept |
-| `invalid yaml in .../profile.yaml` | Fix the file with `/profile edit`; sensai keeps running without a profile meanwhile |
-| `MASSIVE_API_KEY is missing` | Get a free key at massive.com and add it to `.env` |
-| `massive rate limit (5 calls/min on the free plan)` | Wait a minute; cached news keeps working meanwhile |
-| `massive refused the key` | Check `MASSIVE_API_KEY` in `.env` |
-| `TAVILY_API_KEY is missing` | Get a free key at tavily.com and add it to `.env`; the other tools work without it |
-| `tavily monthly limit reached` | The free plan's 1000 searches are used up; it resets on the 1st of the month |
-| `[warning] mcp server X didnt start: ...` | Check the server's `command` in `config.yaml` (and that `uv` is installed for `fetch`); the other tools still work. Details in `~/.sensai/logs/X.log` |
-| `✗ ...` after a tool call | The tool failed; the model got the error and explains it. Nothing to do unless it keeps happening |
-| `no price data for X, check the ticker` | The symbol is unknown to Yahoo Finance (e.g. a typo) |
-| `yahoo only serves 1m bars for the last 7 days` | Use a later start date or a larger interval |
+| Message                                               | What to do                                                                                                                                                      |
+| ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `OLLAMA_API_KEY is missing, set it in .env`         | Copy `.env.example` to `.env` and add your key                                                                                                              |
+| `OLLAMA_API_KEY missing or invalid, check .env`     | The key was rejected: create a new one on ollama.com                                                                                                            |
+| `model X not available on ..., closest: ...`        | Check the spelling, or run `/model` to list the models                                                                                                        |
+| `this model isnt in the free tier`                  | Pick another model; this one needs a paid plan                                                                                                                  |
+| `cloud quota hit, wait for the reset`               | The free tier limit is reached; it resets after 5 hours (or weekly)                                                                                             |
+| `can't reach ..., check the connection`             | Check your internet connection or the `--host` value                                                                                                          |
+| `connection lost mid answer`                        | Ask again; the interrupted question was not kept                                                                                                                |
+| `invalid yaml in .../profile.yaml`                  | Fix the file with `/profile edit`; sensai keeps running without a profile meanwhile                                                                           |
+| `MASSIVE_API_KEY is missing`                        | Get a free key at massive.com and add it to `.env`                                                                                                            |
+| `massive rate limit (5 calls/min on the free plan)` | Wait a minute; cached news keeps working meanwhile                                                                                                              |
+| `massive refused the key`                           | Check `MASSIVE_API_KEY` in `.env`                                                                                                                           |
+| `TAVILY_API_KEY is missing`                         | Get a free key at tavily.com and add it to `.env`; the other tools work without it                                                                            |
+| `tavily monthly limit reached`                      | The free plan's 1000 searches are used up; it resets on the 1st of the month                                                                                    |
+| `[warning] mcp server X didnt start: ...`           | Check the server's `command` in `config.yaml` (and that `uv` is installed for `fetch`); the other tools still work. Details in `~/.sensai/logs/X.log` |
+| `✗ ...` after a tool call                          | The tool failed; the model got the error and explains it. Nothing to do unless it keeps happening                                                               |
+| `no price data for X, check the ticker`             | The symbol is unknown to Yahoo Finance (e.g. a typo)                                                                                                            |
+| `yahoo only serves 1m bars for the last 7 days`     | Use a later start date or a larger interval                                                                                                                     |
+| `run ... failed (exit code 1)` after `run_python` | The model's code crashed; it got the traceback and usually fixes it. Nothing to do |
+| `run ... failed (timed out after 30s)` | The code ran too long (a loop that never ends, too much data); ask for a smaller window |
+| `"backend": "subprocess"` in a `run_python` result (`/trace`) when you expected Docker | Docker isn't running or the `sensai-sandbox` image isn't built: start Docker, run `docker build -t sensai-sandbox sandbox/`, restart sensai |
 
 ## Tests
 
@@ -516,20 +699,21 @@ pip install -r requirements-dev.txt
 pytest
 ```
 
-The tests never call a model or a data API, so they use no quota, and they run in temporary
+The tests call no model and no data API, so they use no quota, and they run in temporary
 folders instead of your real `~/.sensai` and `data/`.
 
 ## Project status
 
-| Issue | Feature | Status |
-|---|---|---|
-| [#1](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/1) | Repository skeleton | Done |
-| [#2](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/2) | B1 streaming CLI chatbot | Done |
-| [#3](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/3) | M1 saved sessions and user profile | Done |
-| [#4](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/4) | T1 market data MCP server | Done |
-| [#5](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/5) | T1 tool calling in the chat | Done |
-| [#6](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/6) | A1 multi-step reasoning loop (ReAct) | Done |
-| [#7](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/7) | T2 sandboxed code execution | Planned |
-| [#8](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/8) | M4 research note | Planned |
-| [#9](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/9) | EV1 number checking and evaluation | Planned |
-| [#17](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/17) | T3 web search and tool limits | Done |
+| Issue                                                                          | Feature                              | Status  |
+| ------------------------------------------------------------------------------ | ------------------------------------ | ------- |
+| [#1](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/1)   | Repository skeleton                  | Done    |
+| [#2](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/2)   | B1 streaming CLI chatbot             | Done    |
+| [#3](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/3)   | M1 saved sessions and user profile   | Done    |
+| [#4](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/4)   | T1 market data MCP server            | Done    |
+| [#5](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/5)   | T1 tool calling in the chat          | Done    |
+| [#6](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/6)   | A1 multi-step reasoning loop (ReAct) | Done    |
+| [#7](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/7)   | T2 sandboxed code execution          | Done    |
+| [#8](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/8)   | M4 research note                     | Planned |
+| [#19](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/19) | T2 tested quant functions in the sandbox (event study, beta, drawdown) | Planned |
+| [#9](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/9)   | EV1 number checking and evaluation   | Planned |
+| [#17](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/17) | T3 web search and tool limits        | Done    |
