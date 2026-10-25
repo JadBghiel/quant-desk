@@ -17,11 +17,6 @@ system_prompt: >-
 # reasoning models think for a few seconds 1st, shown dim -> the stream stays visible, /think toggles it
 show_thinking: true
 
-# profile + sessions live in ~/.sensai (or $SENSAI_HOME)
-paths:
-  data: data
-  out: out
-
 # MCP servers started w/ sensai, their tools are offered to the model
 # a server that fails to start is a warning, the others still work, `enabled: false` skips one
 # stderr -> ~/.sensai/logs/, each server's limits (its MCP instructions, or `limits:` here) go in
@@ -43,6 +38,11 @@ mcp_servers:
   - name: web
     command: python
     args: [-m, sensai.servers.web]
+  # ours (#7): run_python, the model's code in docker (no network) or a limited subprocess
+  # image: docker build -t sensai-sandbox sandbox/, plots + outputs in out/ ($SENSAI_OUT)
+  - name: sandbox
+    command: python
+    args: [-m, sensai.servers.sandbox]
 
 # the reasoning loop's budget per question (#6): tool calls, and tokens read + written over all
 # its rounds, past either one -> 1 last round w/o tools, the model answers w/ what it has
