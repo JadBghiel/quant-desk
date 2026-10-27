@@ -2,11 +2,12 @@
 
 import sys
 
+from sensai import judge
 from sensai import profile as prof
 from sensai.react import format_trace
 from sensai.ollama import OllamaError
 from sensai.sessions import SessionError
-from sensai.ui import DIM, RESET
+from sensai.ui import DIM, RESET, format_checks, format_judge
 
 HELP = """cmds:
   /model            show the current model and the available ones
@@ -15,6 +16,8 @@ HELP = """cmds:
   /tools            the MCP servers and the tools the model can call
   /trace            show or hide the details of each step (results, tokens)
   /steps            the trace of the last answer: plan, every step, tokens
+  /check            each number of the last answer and where it was found
+  /judge            a 2nd model grades the last answer on its data (1 model call)
   /clear            start a new session, the current one stays saved
   /sessions         the 10 most recent sessions
   /resume <id>      reopen a session (a prefix of the id or "last" works)
@@ -40,7 +43,7 @@ def handle_cmd(session, text):
         return False
     try:
         handler(session, arg)
-    except (OllamaError, SessionError, prof.ProfileError) as e:
+    except (OllamaError, SessionError, prof.ProfileError, judge.JudgeError) as e:
         print(f"[error] {e}")
     return False
 
@@ -93,6 +96,25 @@ def cmd_steps(session, arg):
         print("no answer yet in this session")
         return
     print(format_trace(session.traces[-1]))
+
+
+def cmd_check(session, arg):
+    if not session.traces:
+        print("no answer yet in this session")
+        return
+    print(format_checks(session.traces[-1].get("checks"), sys.stdout.isatty()))
+
+
+def cmd_judge(session, arg):
+    if not session.traces:
+        print("no answer yet in this session")
+        return
+    trace = session.traces[-1]
+    print(f"asking {session.judge_model}...")
+    verdict = judge.run(session.client, session.judge_model, session.turns(), trace.get("checks"))
+    trace["judge"] = verdict
+    session.save()
+    print(format_judge(verdict, sys.stdout.isatty()))
 
 
 def cmd_tools(session, arg):
@@ -188,6 +210,8 @@ CMDS = {
     "/tools": cmd_tools,
     "/trace": cmd_trace,
     "/steps": cmd_steps,
+    "/check": cmd_check,
+    "/judge": cmd_judge,
     "/model": cmd_model,
     "/clear": cmd_clear,
     "/sessions": cmd_sessions,

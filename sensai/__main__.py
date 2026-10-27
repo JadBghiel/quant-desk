@@ -97,7 +97,8 @@ def main(argv=None):
         session = Session(client, cfg["model"], cfg.get("system_prompt"), cfg.get("show_thinking", True),
                           store=store, profile=profile, profile_path=profile_path,
                           hub=hub, max_steps=cfg.get("max_steps", 12),
-                          token_budget=cfg.get("token_budget", 60000), show_trace=args.trace)
+                          token_budget=cfg.get("token_budget", 60000), show_trace=args.trace,
+                          judge_model=cfg.get("judge_model"))
         intro = [tools_msg(hub)]
         if record:
             session.load_record(record)

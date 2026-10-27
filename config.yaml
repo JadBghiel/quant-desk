@@ -48,3 +48,7 @@ mcp_servers:
 # its rounds, past either one -> 1 last round w/o tools, the model answers w/ what it has
 max_steps: 12
 token_budget: 60000
+
+# ev1 (#9): /judge and the eval ask this model to grade an answer on its data, a different model
+# from the chat 1 -> it doesnt grade its own answers, missing -> the chat model
+judge_model: gpt-oss:20b
