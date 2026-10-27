@@ -8,11 +8,11 @@ the model reads the sources and writes the answer itself
 """
 
 import os
-from datetime import date, timedelta
+from datetime import timedelta
 
 import requests
 
-from sensai.data import DataError
+from sensai.data import DataError, today as _today
 from sensai.data.cache import cached
 
 URL = "https://api.tavily.com/search"
@@ -81,7 +81,7 @@ def web_search(query, topic="general", days=None, max_results=5, today=None):
         raise DataError("days must be between 1 and 3650")
     if not 1 <= max_results <= 10:
         raise DataError("max_results must be between 1 and 10")
-    today = today or date.today()
+    today = today or _today()
     # 1h: the web moves, but the same question twice in a session shouldnt cost 2 credits
     results, meta = cached("web", [query.lower(), topic, days, max_results, today.isoformat()], 3600,
                            lambda: _fetch(query, topic, days, max_results, today))

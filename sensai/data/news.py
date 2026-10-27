@@ -15,7 +15,7 @@ from datetime import datetime, timedelta
 
 import requests
 
-from sensai.data import DataError, sub_dir
+from sensai.data import DataError, now as _now, sub_dir
 from sensai.data.cache import cached
 
 URL = "https://api.massive.com/v2/reference/news"
@@ -98,14 +98,16 @@ def _fetch(ticker, window, now):
 
 def _articles(ticker, days, now=None):
     """(articles in the last `days`, meta, window start, coverage), ticker already uppercased"""
-    now = now or datetime.now()
+    now = now or _now()
     if not 1 <= days <= 365:
         raise DataError("days must be between 1 and 365")
     window = max(MIN_WINDOW_DAYS, days)
     # keyed on the day -> the window moves forward, 6h -> fresh news within the same day
     # the fallback key has no date, if massive fails yesterday's news is served as stale
-    got, meta = cached("news", ["v3", ticker, window, now.date().isoformat()], 6 * 3600,
-                       lambda: _fetch(ticker, window, now), fallback_key=["v3", ticker, window])
+    day = now.date().isoformat()
+    got, meta = cached("news", ["v3", ticker, window, day], 6 * 3600,
+                       lambda: _fetch(ticker, window, now), fallback_key=["v3", ticker, window],
+                       cover=lambda k: k[:2] == ["v3", ticker] and k[2] >= window and k[3] == day)
     since = (now - timedelta(days=days)).isoformat()
     articles = [a for a in got["articles"] if a["time"] >= since]
     covered_from = min((a["time"][:10] for a in articles), default=None)
@@ -129,7 +131,7 @@ def get_news(ticker, days=7, limit=10, now=None):
     ticker = _norm(ticker)
     if not 1 <= limit <= 50:
         raise DataError("limit must be between 1 and 50")
-    now = now or datetime.now()
+    now = now or _now()
     articles, meta, since, coverage = _articles(ticker, days, now)
     path = sub_dir("news") / f"{ticker}_{since}_{now.date()}.json"
     path.write_text(json.dumps(articles, ensure_ascii=False, indent=1), encoding="utf-8")
@@ -151,7 +153,7 @@ def get_news(ticker, days=7, limit=10, now=None):
 
 def get_sentiment(ticker, days=30, now=None):
     ticker = _norm(ticker)
-    now = now or datetime.now()
+    now = now or _now()
     articles, meta, since, coverage = _articles(ticker, days, now)
     scored = [a for a in articles if a["score"] is not None]
 

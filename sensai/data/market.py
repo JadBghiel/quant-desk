@@ -8,7 +8,7 @@ import csv
 import logging
 from datetime import date, datetime, timedelta
 
-from sensai.data import DataError, sub_dir
+from sensai.data import DataError, sub_dir, today as _today
 from sensai.data.cache import FOREVER, cached
 
 INTERVALS = ["1m", "2m", "5m", "15m", "30m", "60m", "90m", "1h", "1d", "5d", "1wk", "1mo", "3mo"]
@@ -55,7 +55,7 @@ def _norm_ticker(ticker):
 
 def check_range(interval, start, end, today=None):
     """dates + interval compared w/ yahoo's limits, msg says what to do instead"""
-    today = today or date.today()
+    today = today or _today()
     if interval not in INTERVALS:
         raise DataError(f"interval {interval!r} not supported, use one of {', '.join(INTERVALS)}")
     if start > end:
@@ -70,7 +70,7 @@ def check_range(interval, start, end, today=None):
 
 def get_prices(ticker, start=None, end=None, interval="1d", today=None):
     ticker = _norm_ticker(ticker)
-    today = today or date.today()
+    today = today or _today()
     end_d = _day(end, "end") if end else today
     start_d = _day(start, "start") if start else end_d - timedelta(days=365)
     check_range(interval, start_d, end_d, today)
@@ -93,8 +93,13 @@ def get_prices(ticker, start=None, end=None, interval="1d", today=None):
     ttl = FOREVER if end_d < today else 3600
     # a window ending today moves every day: its fallback (no dates) serves yesterday's bars if yahoo fails
     fallback = ["to_today", ticker, (end_d - start_d).days, interval] if end_d == today else None
-    rows, meta = cached("prices", [ticker, start_d.isoformat(), end_d.isoformat(), interval], ttl, fetch,
-                        fallback_key=fallback)
+    first_day, last_day = start_d.isoformat(), end_d.isoformat()
+    rows, meta = cached("prices", [ticker, first_day, last_day, interval], ttl, fetch, fallback_key=fallback,
+                        cover=lambda k: k[0] == ticker and k[3] == interval and k[1] <= first_day and k[2] >= last_day)
+    # a wider cached window (offline eval) cut to the dates asked for, a no op otherwise
+    rows = [r for r in rows if first_day <= r[0][:10] <= last_day]
+    if not rows:
+        raise DataError(f"no price data for {ticker} between {start_d} and {end_d}")
 
     path = sub_dir("prices") / f"{ticker}_{interval}_{start_d}_{end_d}.csv"
     with path.open("w", newline="", encoding="utf-8") as f:

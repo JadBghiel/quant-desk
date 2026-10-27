@@ -1,10 +1,11 @@
 """chat session: history, system msg, persistence, 1 question goes to the reasoning loop in loop.py"""
 
 import sys
-from datetime import date, datetime
+from datetime import datetime
 
 from sensai import loop, react
 from sensai import profile as prof
+from sensai.data import today as data_today
 from sensai.react import Trace
 from sensai.ui import RESET
 
@@ -12,7 +13,7 @@ from sensai.ui import RESET
 def build_system(base, profile, tools=None, today=None):
     """cfg prompt + today's date + the tools and their limits + the profile block, rebuilt on every
     start, resume and profile change"""
-    today = today or date.today()
+    today = today or data_today()
     parts = [base] if base else []
     parts.append(f"Today is {today:%A %Y-%m-%d}.")
     if tools:
@@ -30,8 +31,10 @@ def _now():
 class Session:
     def __init__(self, client, model, system_prompt=None, show_thinking=True, store=None,
                  profile=None, profile_path=None, hub=None, max_steps=12, token_budget=60000,
-                 show_trace=False):
+                 show_trace=False, judge_model=None):
         self.client = client
+        # ev1: /judge asks this model, the chat model when the cfg has none
+        self.judge_model = judge_model or model
         self.hub = hub
         # the reasoning loop's budget per question: tool calls, and tokens read + written
         self.max_steps = max_steps

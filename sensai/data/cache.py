@@ -9,7 +9,7 @@ import json
 import os
 import time
 
-from sensai.data import DataError, sub_dir
+from sensai.data import DataError, offline, sub_dir
 
 FOREVER = None
 
@@ -32,17 +32,37 @@ def _write(path, entry):
     os.replace(tmp, path)
 
 
-def cached(kind, key, ttl, fetch, now=None, fallback_key=None):
+def _covering(kind, cover):
+    """offline: the 1st entry of this kind whose key passes cover(key), eg a wider window of the
+    same ticker"""
+    for path in sorted(sub_dir(f"cache/{kind}").glob("*.json")):
+        entry = _read(path)
+        if entry and isinstance(entry.get("key"), list) and cover(entry["key"]):
+            return entry
+    return None
+
+
+def cached(kind, key, ttl, fetch, now=None, fallback_key=None, cover=None):
     """(value, meta), ttl in secs, FOREVER = doesnt expire
 
     meta = {"cached": bool, "stale": bool, "age_s": int}, fetch returns json serializable data
     and raises DataError on failure -> a stale entry is served if there is one
     key usually holds today's date -> yesterday's entry cant match it, fallback_key (no date)
     also keeps the last good value, served as stale when the dated key has nothing
+    cover(key) -> bool, used offline: an entry that holds what was asked when the exact key misses,
+    the caller cuts it to the range it wants
     """
     now = time.time() if now is None else now
     path = _path(kind, key)
     entry = _read(path)
+    if offline():
+        # eval snapshot: whatever its age, and no api call
+        entry = entry or (_read(_path(kind, ["last", fallback_key])) if fallback_key is not None else None)
+        entry = entry or (_covering(kind, cover) if cover else None)
+        if entry is None:
+            raise DataError(f"not in the frozen eval data ({kind}), sensai runs offline. use the same "
+                            "tickers and periods as the question, or say the data isnt there")
+        return entry["value"], {"cached": True, "stale": False, "age_s": int(now - entry["fetched_at"])}
     if entry is not None:
         age = now - entry["fetched_at"]
         if ttl is FOREVER or age < ttl:
