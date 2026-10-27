@@ -92,6 +92,25 @@ class OllamaClient:
         hint = f", closest: {', '.join(close)}" if close else ""
         raise ModelNotFound(f"model {model} not available on {self.host}{hint} (/model to list them)")
 
+    def chat(self, model, messages, format=None, options=None):
+        """1 call w/o streaming -> (content, stats), for the judge
+        format = a JSON schema the reply should follow (structured outputs), the cloud doesnt
+        enforce it on gpt-oss -> the caller validates"""
+        body = {"model": model, "messages": messages, "stream": False}
+        if format:
+            body["format"] = format
+        if options:
+            body["options"] = options
+        r = self._request("POST", "/api/chat", json=body)
+        try:
+            data = r.json()
+        except ValueError:
+            raise OllamaError("ollama sent something that isnt json") from None
+        if "error" in data:
+            raise OllamaError(f"ollama error: {data['error']}")
+        return ((data.get("message") or {}).get("content") or "",
+                {"prompt": data.get("prompt_eval_count") or 0, "output": data.get("eval_count") or 0})
+
     def chat_stream(self, model, messages, tools=None):
         """yields (kind, value) chunk by chunk, kind is "thinking", "content", "tool_call" or
         "stats" (the last one: {"prompt": tokens read, "output": tokens written})
