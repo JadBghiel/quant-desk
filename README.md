@@ -70,6 +70,8 @@ python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of
 | `/tools`           | List the MCP servers and the tools the model can call                                            |
 | `/trace`           | Show or hide the details of each step (tool results, tokens used)                                |
 | `/steps`           | Print the trace of the last answer: the plan, every step with its thought and result, the tokens |
+| `/check`           | List each number of the last answer, with the tool result it was found in, or why it was flagged |
+| `/judge`           | Have a second model grade the last answer on the data it was given (one model call)              |
 | `/clear`           | Start a new session; the current one stays saved                                                 |
 | `/sessions`        | List the 10 most recent sessions                                                                 |
 | `/resume <id>`     | Reopen a session (a prefix of the id, or `last`)                                               |
@@ -408,6 +410,73 @@ This example also shows a limit. Massive returns at most 1000 articles per call,
 covered September 4 to October 28, a shorter window than the 6 months asked (the tool result says so, with
 `truncated` and `covered_from`), and the model did not mention it.
 
+### Number checking and the judge (EV1)
+
+Under each answer, sensai lists how many of its numbers it found in the data the tools returned.
+When all of them are there, it's one line:
+
+```
+> how did NVDA do vs SPY over the last year?
+⚙ get_prices(ticker=NVDA)  0.8s ✓
+⚙ get_prices(ticker=SPY)  0.1s ✓
+Over the last year (2025-10-28 to 2026-10-28), NVDA underperformed SPY:
+
+- NVDA: +7.39% (from 200.55 to 215.38)
+- SPY: +13.62% (from 679.73 to 772.31)
+
+checked: 6 numbers, all found in the tool results
+
+> /check
+6 numbers · 6 found · 0 derived · 0 not found in the tool results
+  ✓ +7.39%   get_prices, step 1         - NVDA: +7.39% (from 200.55 to 215.38)
+  ✓ 200.55   get_prices, step 1         - NVDA: +7.39% (from 200.55 to 215.38)
+  ...
+  ✓ 772.31   get_prices, step 2         - SPY: +13.62% (from 679.73 to 772.31)
+```
+
+A number that no tool returned is flagged with the words around it. In an earlier session, a
+question on PLTR and HOOD's 30-day returns got 1 year of prices; the model then wrote the closes of
+September 27 and the returns from memory:
+
+```
+checked: 17 numbers · 13 found · 0 derived · 4 not found in the tool results
+  ✗ +5.14%  * **PLTR**: +5.14% (Close 2026-10-27: 198.42 / Close 2026-09-27: 188.68)
+  ✗ 188.68  * **PLTR**: +5.14% (Close 2026-10-27: 198.42 / Close 2026-09-27: 188.68)
+  ✗ -12.45%  * **HOOD**: -12.45% (Close 2026-10-27: 95.36 / Close 2026-09-27: 108.85)
+  ✗ 108.85  e 2026-10-27: 95.36 / Close 2026-09-27: 108.85)
+```
+
+Numbers typed into the analysis code count too. Asked for a pie chart of the chip makers' market
+shares, the model found no table in its web searches and wrote approximate revenues into its
+`run_python` code. The answer itself held no number, but the chart did:
+
+```
+> make a pie chart of the market share of the biggest chip makers worldwide, w/ their tickers
+⚙ web_search(query=biggest semiconductor companies worldwide by revenue 2024 202...)  2.1s ✓
+...
+⚙ run_python(code=import matplotlib.pyplot as plt # Based on general 2023/2024 i...)  1.7s ✓
+... the following chart is based on industry-standard revenue approximations ...
+
+  ✗ run_python (step 6) types in 8 numbers not found in the tool results [69, 60, 50, 54, ...]
+saved:
+  /Users/.../out/20261028-214023-9aea/chip_market_share.png
+
+> /judge
+asking gpt-oss:20b...
+judge (gpt-oss:20b): relevance 2/5 · coherence 3/5 · faithfulness 1/5
+  ✓ supported    Since precise real-time revenue figures for all top chip makers in a single table
+                 were not available in the most recent search results  (web_search results 1-5)
+  ? unverifiable the following chart is based on industry-standard revenue approximations for the
+                 2023/2024 period
+  ? unverifiable Estimated Market Share by Revenue (Approx. 2023/24): TSMC, NVIDIA, Intel, ...
+  ...
+The answer is partially relevant but lacks concrete market share data and percentages, making it
+incomplete and not fully faithful to the requested information.
+```
+
+(The flag on the code came after this session: the line shown is that same answer run through the
+current check.)
+
 ### Things to try
 
 | Type this                                                                           | You should see                                                                         |
@@ -425,6 +494,8 @@ covered September 4 to October 28, a shorter window than the 6 months asked (the
 | `/trace`, then `what is the P/E of NVDA?`                                       | no plan (1 step is enough), a thought, the result preview and the tokens of each round |
 | `annualized volatility of AMD over the last year, with a plot of the daily returns` | `get_prices`, a `run_python` line, the number from the code, then the plot under the answer |
 | `can u make a chart about HOOD YTD stock price` | `get_prices` from January 1, a `run_python` line, the return, high and low, then the chart under the answer |
+| `how did NVDA do vs SPY over the last year?`, then `/check` | `checked: ... all found in the tool results` under the answer, then each number with the step it comes from |
+| `make a pie chart of the market share of the biggest chip makers`, then `/judge` | web searches, a chart, a ✗ line if the code types in its own numbers, then the judge's scores |
 
 ### Our MCP server on its own
 
@@ -600,6 +671,82 @@ a shell command.
 
 Terminals without link or image support, like macOS Terminal.app, show the plain path.
 
+### Number checking and evaluation (EV1)
+
+In finance, a made-up number is worse than no answer. sensai looks up each number of an answer in
+the data its tools returned, with no extra model call:
+
+| Status | Meaning |
+|---|---|
+| found | The number is in a tool result, the output of a `run_python` run, a tool call's arguments or the question, at the precision it's written with: `217.15` matches `217.1499`, `26%` matches `0.2601`, `$5.24 trillion` matches `5243038334976` |
+| derived | The difference, ratio or % change of two numbers found in the same answer (NVDA +8.68% vs SPY +2.58% → `+6.10` points) |
+| not found | None of the above: flagged under the answer with the words around it |
+
+Dates, times, list numbers, durations ("30-day"), index names ("S&P 500") and tickers like
+`000660.KS` are skipped. News and web pages hold hundreds of numbers, and a round number would
+always find one by chance (a "25.0%" market share matched "25 robots" in a news summary). To avoid
+that, a percentage needs a percentage or a fraction in the source. A number with 2 significant
+digits or fewer found in news, web results or an older turn must also share a word with the text
+around it in the source (a ticker, a field name, a nearby word). Sums don't count as derived,
+since that is how a made-up pie chart adds up.
+
+The check also reads the `run_python` code of the question: a list or dict of 4 or more numbers
+(3 with decimals) that aren't in any tool result means the model typed data in, and it is flagged
+even when the answer itself holds no number.
+
+A match shows that a number exists in the data. Whether it was used for the right thing is another
+question (a 1-year return presented as year-to-date passes the check), and `/judge` covers it: a second model
+(`judge_model`, `gpt-oss:20b` by default, a different model from the one it grades) reads the question,
+the tool results, the check and the answer. It scores relevance, coherence and faithfulness from 1
+to 5, and marks each claim as supported, contradicted or unverifiable. Its reply is requested as
+JSON with a schema, then validated, with one retry.
+
+**The evaluation** runs a fixed set of 20 questions (`eval/questions.yaml`) on frozen data. Two
+models or two prompts can then be compared on the same inputs:
+
+```bash
+python -m sensai.eval --record          # once: run live and save the data in eval/data/
+python -m sensai.eval                   # every question, offline on the snapshot, with the judge
+python -m sensai.eval --limit 5         # the first 5 only (saves the cloud quota)
+python -m sensai.eval --model gpt-oss:20b --no-judge
+python -m sensai.eval --only nvda-beta,nvda-drawdown
+```
+
+Each question gets a new session with the market data and sandbox tools (web search and web pages
+can't be frozen), a fixed profile (benchmark SPY) and the snapshot's date. The tools serve from
+the snapshot alone (`SENSAI_OFFLINE=1`), and a wider cached window is cut to the dates the model
+asks for. The report gives, for each question and in total:
+
+- **correct**: the expected values found in the answer, within a tolerance. They were computed by
+  hand with pandas from the snapshot.
+- **faithfulness**: the share of the answer's numbers that were found or derived.
+- **planted**: one number found in each answer is multiplied by 1.37, and the check must flag it.
+- **traps**: 3 questions no tool can answer (options implied volatility, an unknown ticker, a price
+  in 2027). The answer passes if it holds no number from nowhere.
+- the judge's 3 scores, then the time, rounds and tokens per question.
+
+On the snapshot of October 28, 2026, `gemma4:31b` with `gpt-oss:20b` as judge (5 questions):
+
+```
+question               correct  numbers flagged  planted judge r/c/f steps   secs
+nvda-vs-spy            3/3            3       0  caught  5/5/5           3    2.5
+mu-market-cap          1/1            1       0  caught  5/5/5           1    1.0
+nvda-beta              1/1            1       0  caught  5/5/5           3    5.1
+nvda-sentiment         1/1            1       0  caught  5/5/5           1    1.3
+trap-implied-vol       trap ok        0       0  -       2/5/5           0    0.6
+
+model gemma4:31b · judge gpt-oss:20b · data 2026-10-28 (frozen)
+correct 100.0% (6/6 expected values) · faithfulness 100.0% (6/6 numbers found or derived) · planted caught 4/4 · traps 1/1
+judge on 5: relevance 4.4 · coherence 5.0 · faithfulness 5.0 (out of 5)
+per question: 2.1s, 2.6 rounds, 6134.8 tokens
+```
+
+The live recording of all 20 questions had no flagged number, caught 17 of 17 planted numbers and
+passed the 3 traps. The judge gives a low relevance to a correct refusal ("I don't have options
+data"): for those rows, read the trap column. Results are saved in `eval/results/`. The snapshot
+and the results stay out of git (they hold Yahoo Finance and Massive content). A fresh clone
+records its own snapshot first.
+
 ## Your profile
 
 All fields are optional, and empty ones are left out.
@@ -647,6 +794,7 @@ the folder.
 | `mcp_servers`    | MCP servers to start: `name`, `command`, `args`, optional `env`, `cwd`, `limits` (what its tools can't do, for servers that don't declare it), `enabled: false` to skip one. `python` means the Python running sensai |
 | `max_steps`      | Tool calls per question before the model must answer (`12`)                                                                                                                                                                         |
 | `token_budget`   | Tokens read and written per question, over all its rounds, before the model must answer (`60000`)                                                                                                                                   |
+| `judge_model`    | Model that grades answers for `/judge` and the evaluation (`gpt-oss:20b`); the chat model is used when it's missing                                                                                                                |
 
 `.env` holds the secrets: `OLLAMA_API_KEY` (required), `MASSIVE_API_KEY` (for news and
 sentiment) and `TAVILY_API_KEY` (for web search).
@@ -657,6 +805,8 @@ sentiment) and `TAVILY_API_KEY` (for web search).
 | `SENSAI_DATA` | Folder for market data and its cache (default `data/`) |
 | `SENSAI_OUT` | Folder for what the sandbox runs produce (default `out/`) |
 | `SENSAI_SANDBOX` | `auto` (default: Docker when its image is built), `docker` or `subprocess` |
+| `SENSAI_TODAY` | A fixed date (`2026-10-28`) used instead of the clock by the data tools and the system prompt. The evaluation sets it |
+| `SENSAI_OFFLINE` | `1`: the data tools answer from their cache and make no API call. The evaluation sets it |
 
 ## Models
 
@@ -691,6 +841,10 @@ every week. Some models listed by `/model` are paid only.
 | `run ... failed (exit code 1)` after `run_python` | The model's code crashed; it got the traceback and usually fixes it. Nothing to do |
 | `run ... failed (timed out after 30s)` | The code ran too long (a loop that never ends, too much data); ask for a smaller window |
 | `"backend": "subprocess"` in a `run_python` result (`/trace`) when you expected Docker | Docker isn't running or the `sensai-sandbox` image isn't built: start Docker, run `docker build -t sensai-sandbox sandbox/`, restart sensai |
+| `✗ 25.0%  ...` under an answer | That number isn't in any tool result of the conversation. Ask where it comes from, or ask the model to compute it with `run_python`. `/check` lists every number |
+| `the judge (...) didnt reply w/ valid JSON twice` | The judge model answered in the wrong shape. Run `/judge` again, or set another `judge_model` |
+| `not in the frozen eval data` (evaluation only) | The model asked for data the snapshot doesn't hold. Record a new one with `python -m sensai.eval --record` |
+| `no snapshot in eval/data/` | Record one first: `python -m sensai.eval --record` (live, uses the data APIs once) |
 
 ## Tests
 
@@ -715,5 +869,5 @@ folders instead of your real `~/.sensai` and `data/`.
 | [#7](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/7)   | T2 sandboxed code execution          | Done    |
 | [#8](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/8)   | M4 research note                     | Planned |
 | [#19](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/19) | T2 tested quant functions in the sandbox (event study, beta, drawdown) | Planned |
-| [#9](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/9)   | EV1 number checking and evaluation   | Planned |
+| [#9](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/9)   | EV1 number checking and evaluation   | Done    |
 | [#17](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/17) | T3 web search and tool limits        | Done    |
