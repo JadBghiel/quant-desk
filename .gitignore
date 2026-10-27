@@ -16,3 +16,8 @@ PLAN.md
 
 # tests stay local
 /tests/
+
+# eval (#9): the data snapshot (yahoo + massive content) and the runs stay local
+/eval/data/
+/eval/out/
+/eval/results/

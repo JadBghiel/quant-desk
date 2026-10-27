@@ -1,0 +1,105 @@
+# eval set for python -m sensai.eval, on the quant-data + sandbox tools only (web and fetch cant be frozen)
+# expect: values the answer must hold, computed by hand w/ pandas from the snapshot of 2026-10-28 in eval/data/,
+#   value in the unit the answer writes it in (8.28 for 8.28%), tol = the gap allowed
+# trap: no tool has the data -> passes when the answer has no number from nowhere
+
+questions:
+  - id: nvda-1y-return
+    q: What was NVDA's total return over the last year?
+    expect:
+      - {what: 1y return %, value: 7.39, tol: 0.01}
+
+  - id: spy-1y-return
+    q: How much did SPY return over the last year?
+    expect:
+      - {what: 1y return %, value: 13.62, tol: 0.01}
+
+  - id: amd-1y-range
+    q: What were AMD's highest and lowest prices over the last year?
+    expect:
+      - {what: 1y high, value: 658.52, tol: 0.01}
+      - {what: 1y low, value: 188.22, tol: 0.01}
+
+  - id: nvda-vs-spy
+    q: Did NVDA beat SPY over the last year? By how many percentage points?
+    expect:
+      - {what: NVDA 1y return %, value: 7.39, tol: 0.01}
+      - {what: SPY 1y return %, value: 13.62, tol: 0.01}
+      - {what: gap in points, value: 6.23, tol: 0.02}
+
+  - id: best-of-3
+    q: Which of NVDA, AMD and MU had the best return over the last year, and how much was it?
+    expect:
+      - {what: MU 1y return % (the best), value: 343.58, tol: 0.01}
+
+  - id: nvda-ytd
+    q: What is NVDA's return since January 1st this year?
+    expect:
+      - {what: return since 2026-01-02 %, value: 14.32, tol: 0.05}
+
+  - id: nvda-pe
+    q: What is NVDA's trailing P/E ratio?
+    expect:
+      - {what: trailing P/E, value: 27.23, tol: 0.01}
+
+  - id: aapl-forward-pe
+    q: What is Apple's forward P/E?
+    expect:
+      - {what: forward P/E, value: 35.96, tol: 0.01}
+
+  - id: mu-market-cap
+    q: What is Micron's market cap?
+    expect:
+      - {what: market cap ($1.11 trillion), value: 1112449220608, tol: 15000000000}
+
+  - id: aapl-dividend
+    q: What dividend yield does AAPL pay?
+    expect:
+      - {what: dividend yield %, value: 0.31, tol: 0.005}
+
+  - id: amd-volatility
+    q: What is AMD's annualized volatility of daily returns over the last year?
+    expect:
+      - {what: annualized vol % (simple or log returns), value: 68.2, tol: 1}
+
+  - id: nvda-spy-corr
+    q: What is the correlation between NVDA and SPY daily returns over the last year?
+    expect:
+      - {what: corr of daily returns, value: 0.656, tol: 0.01}
+
+  - id: nvda-beta
+    q: What is NVDA's beta to SPY, from daily returns over the last year?
+    expect:
+      - {what: beta on daily returns, value: 1.924, tol: 0.03}
+
+  - id: nvda-drawdown
+    q: What was NVDA's maximum drawdown over the last year, on closing prices?
+    expect:
+      - {what: max drawdown %, value: 20.21, tol: 0.3}
+
+  - id: amd-sma50
+    q: What is AMD's 50 day simple moving average of the close, as of the last close?
+    expect:
+      - {what: SMA 50 of the close, value: 545.58, tol: 0.5}
+
+  - id: nvda-sentiment
+    q: What is the average news sentiment score for NVDA over the last 30 days?
+    expect:
+      - {what: mean sentiment over 30 days, value: 0.4337, tol: 0.005}
+
+  - id: nvda-news-count
+    q: How many news articles about NVDA came out in the last 7 days?
+    expect:
+      - {what: articles in 7 days, value: 184, tol: 0}
+
+  - id: trap-implied-vol
+    q: What is NVDA's implied volatility from its options right now?
+    trap: true
+
+  - id: trap-unknown-ticker
+    q: What is the P/E ratio of ZZZZQ?
+    trap: true
+
+  - id: trap-future-price
+    q: What will NVDA close at on June 30, 2027?
+    trap: true
