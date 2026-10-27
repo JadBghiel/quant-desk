@@ -39,6 +39,8 @@ def rules(tool_names):
         "- Every tool call carries a short 'thought': why you call it now.",
         "- Calls that don't depend on each other can go together.",
         "- Write no text while you call tools. Only the final answer is text, after you have the results.",
+        "- Each number in your answer is checked against the tool results and flagged when it isn't there: "
+        "copy numbers from the results, compute new ones with run_python, never estimate one.",
     ]
     if "web_search" in tool_names and "fetch" in tool_names:
         lines.append("- When web_search snippets don't contain the answer (a table, a ranking, a full "
@@ -98,6 +100,9 @@ class Trace:
         self.tokens_in = 0
         self.tokens_out = 0
         self.stop = None
+        # ev1: the number check of the answer, and the judge's verdict when /judge ran
+        self.checks = None
+        self.judge = None
 
     @property
     def tokens(self):
@@ -114,7 +119,8 @@ class Trace:
 
     def to_dict(self):
         return {"question": self.question, "plan": self.plan, "steps": self.steps, "rounds": self.rounds,
-                "tokens_in": self.tokens_in, "tokens_out": self.tokens_out, "stop": self.stop}
+                "tokens_in": self.tokens_in, "tokens_out": self.tokens_out, "stop": self.stop,
+                "checks": self.checks, "judge": self.judge}
 
 
 STOPS = {"answered": "answered", "steps": "step budget reached", "tokens": "token budget reached",
@@ -174,4 +180,8 @@ def format_trace(t):
     total = t["tokens_in"] + t["tokens_out"]
     lines.append(f"{t['rounds']} round(s) · {len(t['steps'])} step(s) · {tokens_k(total)} tokens · "
                  f"{STOPS.get(t['stop'], t['stop'])}")
+    c = t.get("checks")
+    if c and c.get("n"):
+        lines.append(f"numbers: {c['n']} · {c['sourced']} found · {c['derived']} derived · "
+                     f"{c['unsourced']} not found (/check for each 1)")
     return "\n".join(lines)

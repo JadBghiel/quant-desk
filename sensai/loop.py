@@ -10,9 +10,9 @@ trace) in react.py
 import json
 import time
 
-from sensai import react
+from sensai import check, react
 from sensai.react import Cleaner
-from sensai.ui import DIM, RESET, Spinner, file_link, inline_image, tool_line
+from sensai.ui import DIM, RESET, Spinner, check_block, file_link, inline_image, tool_line
 
 
 def answer(session, out, tty, trace):
@@ -60,9 +60,11 @@ def answer(session, out, tty, trace):
                                                 "Make a real tool call, then answer from its result."}
             continue
         if not calls or over:
+            # ev1: the numbers of the answer vs the data in the history, before the answer joins it
+            trace.checks = check.check_answer(content, session.messages)
             session.messages.append({"role": "assistant", "content": content})
             trace.stop = trace.stop or "answered"
-            show_files(out, saved, tty, content)
+            show_footer(out, content, trace.checks, saved, tty)
             return content
         session.messages.append({"role": "assistant", "content": content, "tool_calls": calls})
         for call in calls:
@@ -75,13 +77,21 @@ def answer(session, out, tty, trace):
                 saved += [f for f in react.result_files(result) if f not in saved] if ok else []
 
 
-def show_files(out, paths, tty, content):
-    """under the answer, trace on or off: 1 link per saved file, the image drawn below when the
-    terminal can"""
+def show_footer(out, content, checks, paths, tty):
+    """under the answer, trace on or off: the number check, then the saved files"""
+    block = check_block(checks, tty)
+    if not block and not paths:
+        return
+    out.write(("" if not content or content.endswith("\n") else "\n") + "\n" + block)
+    show_files(out, paths, tty)
+
+
+def show_files(out, paths, tty):
+    """1 link per saved file, the image drawn below when the terminal can"""
     if not paths:
         return
     dim, reset = (DIM, RESET) if tty else ("", "")
-    out.write(("" if not content or content.endswith("\n") else "\n") + f"\n{dim}saved:{reset}\n")
+    out.write(f"{dim}saved:{reset}\n")
     for path in paths:
         out.write(f"  {file_link(path, tty)}\n")
         image = inline_image(path, tty)

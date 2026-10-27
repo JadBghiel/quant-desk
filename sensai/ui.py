@@ -105,3 +105,63 @@ def tool_line(name, args, secs, ok, error=None, tty=True):
         return line + f"{green}✓{reset}"
     msg = (error or "failed").strip().splitlines()[0].removeprefix(f"Error executing tool {name}: ")
     return line + f"{red}✗ {msg[:120]}{reset}"
+
+
+def _n(count, word):
+    return f"{count} {word}{'' if count == 1 else 's'}"
+
+
+def check_block(checks, tty=True):
+    """the ev1 lines under the answer, "" when the answer has no number
+    1 line when all are found, else the counts + 1 ✗ line per number not found w/ the words around
+    it, + 1 line per run_python step that types data in"""
+    if not checks or not (checks.get("n") or checks.get("hardcoded")):
+        return ""
+    dim, reset, red = (DIM, RESET, RED) if tty else ("", "", "")
+    n, derived, missing = checks["n"], checks["derived"], checks["unsourced"]
+    code = [f"  {red}✗{reset} run_python (step {h['step']}) types in {h['count']} numbers not found in the tool "
+            f"results {dim}{h['sample']}{reset}" for h in checks.get("hardcoded") or []]
+    if not missing:
+        how = f", {derived} derived from them" if derived else ""
+        head = f"{dim}checked: {_n(n, 'number')}, all found in the tool results{how}{reset}" if n else ""
+        return "\n".join([line for line in [head] if line] + code) + "\n"
+    lines = [f"{dim}checked: {_n(n, 'number')} · {checks['sourced']} found · {derived} derived · "
+             f"{reset}{red}{missing} not found in the tool results{reset}"]
+    for item in checks["items"]:
+        if item["status"] == "unsourced":
+            lines.append(f"  {red}✗{reset} {item['text']}  {dim}{item['context'][:80]}{reset}")
+    return "\n".join(lines + code) + "\n"
+
+
+MARKS = {"sourced": "✓", "derived": "≈", "unsourced": "✗"}
+VERDICT_MARKS = {"supported": "✓", "contradicted": "✗", "unverifiable": "?"}
+
+
+def format_checks(checks, tty=True):
+    """/check: 1 line per number, its status and where it was found"""
+    dim, reset, green, red = (DIM, RESET, GREEN, RED) if tty else ("", "", "", "")
+    code = [f"{red}✗{reset} run_python (step {h['step']}) types in {h['count']} numbers not found in the tool "
+            f"results: {h['sample']}" for h in (checks or {}).get("hardcoded") or []]
+    if not checks or not checks.get("n"):
+        return "\n".join(code or ["no number in the last answer"])
+    lines = [f"{checks['n']} numbers · {checks['sourced']} found · {checks['derived']} derived · "
+             f"{checks['unsourced']} not found in the tool results"]
+    width = max(len(i["text"]) for i in checks["items"])
+    for i in checks["items"]:
+        color = {"sourced": green, "unsourced": red}.get(i["status"], "")
+        where = {"sourced": i["source"], "derived": f"derived: {i['source']}"}.get(i["status"], "not found")
+        lines.append(f"  {color}{MARKS[i['status']]}{reset} {i['text']:<{width}}  {where:<26} {dim}{i['context'][:70]}{reset}")
+    return "\n".join(lines + code)
+
+
+def format_judge(v, tty=True):
+    dim, reset, green, red = (DIM, RESET, GREEN, RED) if tty else ("", "", "", "")
+    lines = [f"judge ({v['model']}): relevance {v['relevance']}/5 · coherence {v['coherence']}/5 · "
+             f"faithfulness {v['faithfulness']}/5"]
+    for c in v["claims"]:
+        color = {"supported": green, "contradicted": red}.get(c["verdict"], "")
+        src = f"  {dim}({c['source']}){reset}" if c["source"] and c["source"] != "none" else ""
+        lines.append(f"  {color}{VERDICT_MARKS[c['verdict']]} {c['verdict']:<12}{reset} {c['claim']}{src}")
+    if v.get("comment"):
+        lines.append(f"{dim}{v['comment']}{reset}")
+    return "\n".join(lines)
