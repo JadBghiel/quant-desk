@@ -2,12 +2,12 @@
 
 import sys
 
-from sensai import judge
+from sensai import judge, note
 from sensai import profile as prof
 from sensai.react import format_trace
 from sensai.ollama import OllamaError
 from sensai.sessions import SessionError
-from sensai.ui import DIM, RESET, format_checks, format_judge
+from sensai.ui import DIM, RESET, file_link, format_checks, format_judge
 
 HELP = """cmds:
   /model            show the current model and the available ones
@@ -18,6 +18,7 @@ HELP = """cmds:
   /steps            the trace of the last answer: plan, every step, tokens
   /check            each number of the last answer and where it was found
   /judge            a 2nd model grades the last answer on its data (1 model call)
+  /note             the research note of this session and its file
   /clear            start a new session, the current one stays saved
   /sessions         the 10 most recent sessions
   /resume <id>      reopen a session (a prefix of the id or "last" works)
@@ -117,6 +118,22 @@ def cmd_judge(session, arg):
     print(format_judge(verdict, sys.stdout.isatty()))
 
 
+def cmd_note(session, arg):
+    if not session.notes:
+        print("notes are off in this run")
+        return
+    if not session.note["sections"]:
+        print("no note yet in this session, sensai writes it while it answers research questions")
+        return
+    print(note.render(session.note, session.id), end="")
+    # written again in case the file was deleted, same bytes
+    path = note.write(session)
+    if path:
+        tty = sys.stdout.isatty()
+        dim, reset = (DIM, RESET) if tty else ("", "")
+        print(f"{dim}file:{reset} {file_link(path, tty)}")
+
+
 def cmd_tools(session, arg):
     hub = session.hub
     if not hub or not hub.servers:
@@ -212,6 +229,7 @@ CMDS = {
     "/steps": cmd_steps,
     "/check": cmd_check,
     "/judge": cmd_judge,
+    "/note": cmd_note,
     "/model": cmd_model,
     "/clear": cmd_clear,
     "/sessions": cmd_sessions,
