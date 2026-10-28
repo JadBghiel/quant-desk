@@ -86,6 +86,23 @@ python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of
 **Ctrl+C** during an answer stops it and returns to the prompt. The interrupted question is
 dropped from the conversation, so you can ask it again.
 
+### Typing in the chat
+
+| Key or input | What it does |
+| --- | --- |
+| ← → | Move in the line to fix a typo |
+| ↑ ↓ | Go through your past inputs, including the ones of earlier runs |
+| Tab | Complete a command: `/ste` becomes `/steps`. When several match (`/re`), a second Tab lists them (`/remember /resume`). It also completes `/profile setup` and `/profile edit`, and the session ids after `/resume` |
+| `"""` on its own line | Start a multi-line question: the prompt turns into `...`, and the next `"""` line sends everything as one question. Ctrl+C or Ctrl+D inside the block cancels it |
+
+To paste a block of text (a table, a list of tickers, an error message), type `"""`, paste, then
+type `"""`. Without the markers, each pasted line would be sent as a separate question.
+
+Your past inputs are saved in `~/.sensai/history` (the last 1,000, readable by your user only).
+A multi-line question is saved as one line. Line editing, the history and Tab need Python's
+`readline` module, which macOS and Linux include; without it, the chat still works with plain input
+and the `"""` blocks.
+
 # Usage examples
 
 Real sessions on the default model `gemma4:31b`. Long answers are shortened with `...`.
@@ -884,6 +901,7 @@ can't be committed by mistake:
 ```
 ~/.sensai/
 ├── profile.yaml
+├── history                     your past inputs, for ↑ ↓ (the last 1,000)
 ├── sessions/
 │   └── 20260928-143012.json    one file per session, named after its start time
 ├── notes/
@@ -936,6 +954,7 @@ every week. Some models listed by `/model` are paid only.
 
 | Message                                               | What to do                                                                                                                                                      |
 | ----------------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `^[[A` or `^[[C` when you press an arrow key | Python was built without `readline`: line editing, the input history and Tab aren't available. The `"""` blocks still work |
 | `OLLAMA_API_KEY is missing, set it in .env`         | Copy `.env.example` to `.env` and add your key                                                                                                              |
 | `OLLAMA_API_KEY missing or invalid, check .env`     | The key was rejected: create a new one on ollama.com                                                                                                            |
 | `model X not available on ..., closest: ...`        | Check the spelling, or run `/model` to list the models                                                                                                        |
@@ -986,3 +1005,4 @@ folders instead of your real `~/.sensai` and `data/`.
 | [#8](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/8)   | M4 research note                     | Done    |
 | [#9](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/9)   | EV1 number checking and evaluation   | Done    |
 | [#17](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/17) | T3 web search and tool limits        | Done    |
+| [#14](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/14) | Line editing, input history and multi-line questions | Done |
