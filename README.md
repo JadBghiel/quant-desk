@@ -72,6 +72,7 @@ python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of
 | `/steps`           | Print the trace of the last answer: the plan, every step with its thought and result, the tokens |
 | `/check`           | List each number of the last answer, with the tool result it was found in, or why it was flagged |
 | `/judge`           | Have a second model grade the last answer on the data it was given (one model call)              |
+| `/note`            | Print the research note of the session and the path of its file                                  |
 | `/clear`           | Start a new session; the current one stays saved                                                 |
 | `/sessions`        | List the 10 most recent sessions                                                                 |
 | `/resume <id>`     | Reopen a session (a prefix of the id, or `last`)                                               |
@@ -477,6 +478,87 @@ incomplete and not fully faithful to the requested information.
 (The flag on the code came after this session: the line shown is that same answer run through the
 current check.)
 
+### Research note (M4)
+
+While it answers a research question, the model writes what it found into the session's note,
+one section at a time. Three follow-up questions in one session:
+
+```
+> how did NVDA do vs SPY over the last year?
+⚙ get_prices(ticker=NVDA)  0.0s ✓
+⚙ get_prices(ticker=SPY)  0.0s ✓
+⚙ run_python(code=import pandas as pd nvda = pd.read_csv('/Users/jadbghiel/EPITE...)  0.2s ✓
+✎ note: data (replace)
+✗ note: method refused, 100 not found in the tool results. Copy numbers from the results or compute them with run_python, ...
+✎ note: results (replace)
+Over the last year (from 2025-10-29 to 2026-10-28), NVDA underperformed the SPY.
+...
+checked: 3 numbers, all found in the tool results
+note: data, results updated · /Users/.../.sensai/notes/20261029-131213.md
+
+> what is its beta to SPY on daily returns?
+⚙ run_python(code=import pandas as pd import numpy as np nvda = pd.read_csv('/Us...)  0.2s ✓
+✎ note: method (replace)
+✎ note: results (append)
+The beta of NVDA relative to SPY on daily returns over the last year is 1.9246.
+
+> and its max drawdown?
+⚙ run_python(code=import pandas as pd nvda = pd.read_csv('/Users/jadbghiel/EPITE...)  0.2s ✓
+✎ note: method (append)
+✎ note: results (append)
+The maximum drawdown for NVDA over the last year was -20.21%.
+```
+
+The refused edit had `* 100` in a return formula, and 100 is in no tool result. The check refuses
+any number it can't find, even a constant. The note after the third question, as `/note` prints it:
+
+```
+# how did NVDA do vs SPY over the last year?
+
+session 20261029-131213 · gemma4:31b
+
+## Question
+
+(empty)
+
+## Data
+
+NVDA vs SPY Performance Analysis
+Period: 2025-10-29 to 2026-10-28
+Source: Yahoo Finance via get_prices
+
+## Method
+
+Calculated beta using daily returns for the period 2025-10-29 to 2026-10-28.
+Beta = Covariance(NVDA_returns, SPY_returns) / Variance(SPY_returns).
+Max drawdown calculated as the minimum of (Price / Cumulative_Max_Price - 1) over the period 2025-10-29 to 2026-10-28.
+
+## Results
+
+NVDA Return: +4.28% [q1 get_prices step 1]
+SPY Return: +13.57% [q1 get_prices step 2]
+Underperformance: -9.29% [q1 run_python step 3]
+NVDA Beta to SPY: 1.9246 [q2 run_python step 1]
+NVDA Max Drawdown: -20.21% [q3 run_python step 1]
+
+## Caveats
+
+(empty)
+file: /Users/.../.sensai/notes/20261029-131213.md
+```
+
+Between two questions, a `diff` of the file shows only the sections that question edited:
+
+```
+$ diff note_q2.md note_q3.md
+18a19
+> Max drawdown calculated as the minimum of (Price / Cumulative_Max_Price - 1) over the period 2025-10-29 to 2026-10-28.
+25a27
+> NVDA Max Drawdown: -20.21% [q3 run_python step 1]
+```
+
+`python -m sensai --resume` brings the session back with its note, and `/note` prints it again.
+
 ### Things to try
 
 | Type this                                                                           | You should see                                                                         |
@@ -496,6 +578,7 @@ current check.)
 | `can u make a chart about HOOD YTD stock price` | `get_prices` from January 1, a `run_python` line, the return, high and low, then the chart under the answer |
 | `how did NVDA do vs SPY over the last year?`, then `/check` | `checked: ... all found in the tool results` under the answer, then each number with the step it comes from |
 | `make a pie chart of the market share of the biggest chip makers`, then `/judge` | web searches, a chart, a ✗ line if the code types in its own numbers, then the judge's scores |
+| `how did NVDA do vs SPY over the last year?`, `what is its beta to SPY on daily returns?`, then `/note` | `✎ note: ...` lines before each answer, then the note with a source next to each number |
 
 ### Our MCP server on its own
 
@@ -741,11 +824,41 @@ judge on 5: relevance 4.4 · coherence 5.0 · faithfulness 5.0 (out of 5)
 per question: 2.1s, 2.6 rounds, 6134.8 tokens
 ```
 
-The live recording of all 20 questions had no flagged number, caught 17 of 17 planted numbers and
+The live recording of all 20 questions did not flag any number, caught 17 of 17 planted numbers and
 passed the 3 traps. The judge gives a low relevance to a correct refusal ("I don't have options
 data"): for those rows, read the trap column. Results are saved in `eval/results/`. The snapshot
 and the results stay out of git (they hold Yahoo Finance and Massive content). A fresh clone
 records its own snapshot first.
+
+### Research note (M4)
+
+Each session has a research note, a Markdown file with 5 fixed sections: question, data, method,
+results and caveats. The model edits it with `update_note(section, mode, content)`, a tool that
+sensai handles itself (no MCP server, no extra model call). `mode` is `replace` (rewrite the
+section) or `append` (add lines to it). The tool's description tells the model to use it for
+research questions, before its final answer, with numbers copied from the tool results.
+
+Before an edit is applied:
+
+1. its arguments are validated: a known section, `replace` or `append`, a content that isn't empty
+   and is at most 4,000 characters. An invalid edit gets the reason back as a tool error.
+2. each number in the content goes through the number check of EV1. A number that isn't in the
+   data of the session refuses the whole edit, with a tool error naming it; the model can fix it
+   and call again. 3 refused edits in a row stop the tools, like 3 failed tool calls.
+3. each number found gets its source written next to it, with the question number since a note
+   covers several questions: `+4.28% [q1 get_prices step 1]`, `1.9246 [q2 run_python step 1]`,
+   or the formula for a derived number, `-5.16 [q1 derived +8.28% - +13.44%]`.
+
+Only the target section changes. The file doesn't have a timestamp, and its header (the first question,
+the session id and the model of the first edit) is written once, and two versions differ only in
+the sections that were edited. The file is written atomically (a temporary file, then a rename).
+The model gets the section back as written, with its sources, and a later `replace` knows what
+was there.
+
+The note is saved with the session and comes back with `--resume`. `/clear` starts a new session
+with an empty note. If a question fails or is interrupted with Ctrl+C, the note goes back to its
+state before the question, like the conversation. The evaluation runs without the note tool to keep
+its scores comparable with earlier runs.
 
 ## Your profile
 
@@ -773,6 +886,8 @@ can't be committed by mistake:
 ├── profile.yaml
 ├── sessions/
 │   └── 20260928-143012.json    one file per session, named after its start time
+├── notes/
+│   └── 20260928-143012.md      the research note of that session
 └── logs/                       MCP servers' logs (quant-data.log, fetch.log, web.log, sandbox.log, mcp.log)
 ```
 
@@ -801,7 +916,7 @@ sentiment) and `TAVILY_API_KEY` (for web search).
 
 | Environment variable | Description |
 |---|---|
-| `SENSAI_HOME` | Folder for your profile, sessions and logs (default `~/.sensai`) |
+| `SENSAI_HOME` | Folder for your profile, sessions, notes and logs (default `~/.sensai`) |
 | `SENSAI_DATA` | Folder for market data and its cache (default `data/`) |
 | `SENSAI_OUT` | Folder for what the sandbox runs produce (default `out/`) |
 | `SENSAI_SANDBOX` | `auto` (default: Docker when its image is built), `docker` or `subprocess` |
@@ -842,6 +957,7 @@ every week. Some models listed by `/model` are paid only.
 | `run ... failed (timed out after 30s)` | The code ran too long (a loop that never ends, too much data); ask for a smaller window |
 | `"backend": "subprocess"` in a `run_python` result (`/trace`) when you expected Docker | Docker isn't running or the `sensai-sandbox` image isn't built: start Docker, run `docker build -t sensai-sandbox sandbox/`, restart sensai |
 | `✗ 25.0%  ...` under an answer | That number isn't in any tool result of the conversation. Ask where it comes from, or ask the model to compute it with `run_python`. `/check` lists every number |
+| `✗ note: results refused, 11.34% not found ...` | The model tried to write a number into the note that no tool returned. It got the reason and usually fixes the edit. A constant in a formula (`* 100`) is refused too: ask it to write the formula without the number |
 | `the judge (...) didnt reply w/ valid JSON twice` | The judge model answered in the wrong shape. Run `/judge` again, or set another `judge_model` |
 | `not in the frozen eval data` (evaluation only) | The model asked for data the snapshot doesn't hold. Record a new one with `python -m sensai.eval --record` |
 | `no snapshot in eval/data/` | Record one first: `python -m sensai.eval --record` (live, uses the data APIs once) |
@@ -867,7 +983,6 @@ folders instead of your real `~/.sensai` and `data/`.
 | [#5](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/5)   | T1 tool calling in the chat          | Done    |
 | [#6](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/6)   | A1 multi-step reasoning loop (ReAct) | Done    |
 | [#7](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/7)   | T2 sandboxed code execution          | Done    |
-| [#8](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/8)   | M4 research note                     | Planned |
-| [#19](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/19) | T2 tested quant functions in the sandbox (event study, beta, drawdown) | Planned |
+| [#8](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/8)   | M4 research note                     | Done    |
 | [#9](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/9)   | EV1 number checking and evaluation   | Done    |
 | [#17](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/17) | T3 web search and tool limits        | Done    |
