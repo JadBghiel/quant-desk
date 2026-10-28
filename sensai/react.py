@@ -13,6 +13,8 @@ import copy
 import json
 import re
 
+from sensai.note import NOTE_TOOL
+
 PLAN_TOOL = {"type": "function", "function": {
     "name": "plan",
     "description": "Write your plan before your first other tool call, when a question needs 2 or more "
@@ -31,7 +33,7 @@ TEXT_CALL = re.compile(r"<call:\w+")
 MAX_FAILS = 3
 
 
-def rules(tool_names):
+def rules(tool_names, note=False):
     """the reasoning block of the system msg, when there are tools"""
     lines = [
         "How to work on a question:",
@@ -42,15 +44,18 @@ def rules(tool_names):
         "- Each number in your answer is checked against the tool results and flagged when it isn't there: "
         "copy numbers from the results, compute new ones with run_python, never estimate one.",
     ]
+    if note:
+        lines.append("- For a research question, record what you found with update_note before your final answer, "
+                     "1 call per section, numbers copied from the tool results.")
     if "web_search" in tool_names and "fetch" in tool_names:
         lines.append("- When web_search snippets don't contain the answer (a table, a ranking, a full "
                      "article), fetch the most promising result and read it before saying you can't find it.")
     return "\n".join(lines)
 
 
-def tools_for_model(tools):
-    """the hub's tools + the plan tool, each tool w/ a required `thought` argument"""
-    out = [PLAN_TOOL]
+def tools_for_model(tools, note=False):
+    """the hub's tools + the plan tool (+ the note tool), each hub tool w/ a required `thought` argument"""
+    out = [PLAN_TOOL, NOTE_TOOL] if note else [PLAN_TOOL]
     for tool in tools:
         tool = copy.deepcopy(tool)
         params = tool["function"].setdefault("parameters", {"type": "object", "properties": {}})
@@ -103,6 +108,8 @@ class Trace:
         # ev1: the number check of the answer, and the judge's verdict when /judge ran
         self.checks = None
         self.judge = None
+        # m4: the note edits dont count as steps -> max_steps and the step nb of the refs stay data calls
+        self.notes = []
 
     @property
     def tokens(self):
@@ -120,7 +127,7 @@ class Trace:
     def to_dict(self):
         return {"question": self.question, "plan": self.plan, "steps": self.steps, "rounds": self.rounds,
                 "tokens_in": self.tokens_in, "tokens_out": self.tokens_out, "stop": self.stop,
-                "checks": self.checks, "judge": self.judge}
+                "checks": self.checks, "judge": self.judge, "notes": self.notes}
 
 
 STOPS = {"answered": "answered", "steps": "step budget reached", "tokens": "token budget reached",
@@ -177,6 +184,8 @@ def format_trace(t):
             lines.append("        code:")
             lines.append(indent(code, 10))
         lines.append(f"        result: {s['result']}")
+    for e in t.get("notes") or []:
+        lines.append(f"note: {e['section'] or '?'} ({e['mode'] or '?'}) " + ("ok" if e["ok"] else f"refused: {e['error']}"))
     total = t["tokens_in"] + t["tokens_out"]
     lines.append(f"{t['rounds']} round(s) · {len(t['steps'])} step(s) · {tokens_k(total)} tokens · "
                  f"{STOPS.get(t['stop'], t['stop'])}")

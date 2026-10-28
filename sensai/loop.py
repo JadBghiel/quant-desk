@@ -10,7 +10,7 @@ trace) in react.py
 import json
 import time
 
-from sensai import check, react
+from sensai import check, note, react
 from sensai.react import Cleaner
 from sensai.ui import DIM, RESET, Spinner, check_block, file_link, inline_image, tool_line
 
@@ -20,11 +20,12 @@ def answer(session, out, tty, trace):
     the results and goes again until it answers, over the step or token budget or after
     react.MAX_FAILS failed calls in a row -> 1 last round w/o tools to answer w/ what it has"""
     dim, reset = (DIM, RESET) if tty else ("", "")
-    tools = react.tools_for_model(session.hub.tools) if session.hub and session.hub.tools else None
+    tools = react.tools_for_model(session.hub.tools, session.notes) if session.hub and session.hub.tools else None
     retried = False
     nudge = None
     fails = 0  # failed tool calls in a row, a success resets it
     saved = []  # files the tools wrote for this question, shown under the answer
+    edited = []  # note sections this question changed
     while True:
         over = None
         if tools and fails >= react.MAX_FAILS:
@@ -64,12 +65,17 @@ def answer(session, out, tty, trace):
             trace.checks = check.check_answer(content, session.messages)
             session.messages.append({"role": "assistant", "content": content})
             trace.stop = trace.stop or "answered"
-            show_footer(out, content, trace.checks, saved, tty)
+            show_footer(out, content, trace.checks, saved, tty, note.footer(session, edited, tty))
             return content
         session.messages.append({"role": "assistant", "content": content, "tool_calls": calls})
         for call in calls:
-            if (call.get("function") or {}).get("name") == "plan":
+            name = (call.get("function") or {}).get("name")
+            if name == "plan":
                 plan_step(session, call, out, tty, trace)
+            elif name == note.NAME and session.notes:
+                ok, section = note.note_step(session, call, out, tty, trace)
+                fails = 0 if ok else fails + 1
+                edited += [section] if ok and section not in edited else []
             else:
                 name, args, ok, secs, result, thought = run_tool(session, call, out, tty)
                 trace.add_step(thought, name, args, ok, secs, result)
@@ -77,9 +83,9 @@ def answer(session, out, tty, trace):
                 saved += [f for f in react.result_files(result) if f not in saved] if ok else []
 
 
-def show_footer(out, content, checks, paths, tty):
-    """under the answer, trace on or off: the number check, then the saved files"""
-    block = check_block(checks, tty)
+def show_footer(out, content, checks, paths, tty, note_line=""):
+    """under the answer, trace on or off: the number check, the note line, then the saved files"""
+    block = check_block(checks, tty) + note_line
     if not block and not paths:
         return
     out.write(("" if not content or content.endswith("\n") else "\n") + "\n" + block)

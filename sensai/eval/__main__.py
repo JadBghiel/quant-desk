@@ -82,8 +82,9 @@ def main(argv=None):
         print(f"[warning] {w}")
 
     def make_session():
+        # no note tool -> same tools and system msg as the oct 28 run
         return Session(client, cfg["model"], cfg.get("system_prompt"), show_thinking=False, profile=PROFILE,
-                       hub=hub, max_steps=cfg.get("max_steps", 12), token_budget=cfg.get("token_budget", 60000))
+                       hub=hub, notes=False, max_steps=cfg.get("max_steps", 12), token_budget=cfg.get("token_budget", 60000))
 
     meta = {"model": cfg["model"], "judge_model": judge_model, "today": today, "record": args.record,
             "questions_file": args.questions}
