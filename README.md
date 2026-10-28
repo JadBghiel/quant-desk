@@ -877,6 +877,23 @@ with an empty note. If a question fails or is interrupted with Ctrl+C, the note 
 state before the question, like the conversation. The evaluation runs without the note tool to keep
 its scores comparable with earlier runs.
 
+### Structured output (T5)
+
+In two places sensai has the model answer in JSON that follows a schema, and code parses the
+reply:
+
+- **The judge** (`/judge` and the evaluation) sends a JSON schema in Ollama's `format` field: 3
+  scores from 1 to 5 (relevance, coherence, faithfulness), a list of claims each marked
+  `supported`, `contradicted` or `unverifiable`, and a comment. The reply is parsed and validated;
+  close variants are accepted (a score written `"4"`, `status` instead of `verdict`), and an
+  invalid reply gets one retry with the reason before `/judge` reports an error.
+- **The research note** is edited through `update_note`, whose arguments follow a declared schema
+  (one of the 5 sections, `replace` or `append`, a content of at most 4,000 characters). An edit
+  that doesn't fit is refused with the reason, and the model can send it again.
+
+The schema alone isn't enough on Ollama Cloud: `gpt-oss:20b` sometimes replied without a required
+key even with `format` set. The validation in code is what makes the replies safe to use.
+
 ## Your profile
 
 All fields are optional, and empty ones are left out.
@@ -1006,3 +1023,4 @@ folders instead of your real `~/.sensai` and `data/`.
 | [#9](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/9)   | EV1 number checking and evaluation   | Done    |
 | [#17](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/17) | T3 web search and tool limits        | Done    |
 | [#14](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/14) | Line editing, input history and multi-line questions | Done |
+| [#20](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/20) | T5 structured output (the judge and the note edits) | Done |
