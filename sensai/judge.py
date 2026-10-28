@@ -6,7 +6,7 @@ scores relevance, coherence and source faithfulness 1 to 5, and goes through the
 check cant read (names, events, directions) -> supported, contradicted or unverifiable
 the reply is asked w/ a JSON schema (ollama structured outputs) and validated
 
-the cloud doesnt hold gpt-oss to the schema: 1 reply had no relevance, the next 1 named the verdict
+the cloud doesnt hold gpt-oss to the schema: 1 reply didnt have the relevance field, the next 1 named the verdict
 "status" and skipped the comment -> the shape is also written in the prompt, and close variants are
 accepted (status for verdict, scores as "4" or under "scores"), the 3 scores stay required
 """

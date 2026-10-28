@@ -112,7 +112,7 @@ def _n(count, word):
 
 
 def check_block(checks, tty=True):
-    """the ev1 lines under the answer, "" when the answer has no number
+    """the ev1 lines under the answer, "" when the answer doesnt have a number
     1 line when all are found, else the counts + 1 ✗ line per number not found w/ the words around
     it, + 1 line per run_python step that types data in"""
     if not checks or not (checks.get("n") or checks.get("hardcoded")):

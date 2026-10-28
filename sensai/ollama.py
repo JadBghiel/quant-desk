@@ -76,7 +76,7 @@ class OllamaClient:
         return r
 
     def check_auth(self):
-        """ollama.com /api/tags is public -> a bad key shows up on /api/me, local daemon has no auth"""
+        """ollama.com /api/tags is public -> a bad key shows up on /api/me, local daemon doesnt have auth"""
         if not self.local:
             self._request("POST", "/api/me")
 

@@ -1,7 +1,7 @@
 # eval set for python -m sensai.eval, on the quant-data + sandbox tools only (web and fetch cant be frozen)
 # expect: values the answer must hold, computed by hand w/ pandas from the snapshot of 2026-10-28 in eval/data/,
 #   value in the unit the answer writes it in (8.28 for 8.28%), tol = the gap allowed
-# trap: no tool has the data -> passes when the answer has no number from nowhere
+# trap: no tool has the data -> passes when the answer doesnt have any made up number
 
 questions:
   - id: nvda-1y-return

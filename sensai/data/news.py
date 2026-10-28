@@ -103,7 +103,7 @@ def _articles(ticker, days, now=None):
         raise DataError("days must be between 1 and 365")
     window = max(MIN_WINDOW_DAYS, days)
     # keyed on the day -> the window moves forward, 6h -> fresh news within the same day
-    # the fallback key has no date, if massive fails yesterday's news is served as stale
+    # the fallback key doesnt have a date, if massive fails yesterday's news is served as stale
     day = now.date().isoformat()
     got, meta = cached("news", ["v3", ticker, window, day], 6 * 3600,
                        lambda: _fetch(ticker, window, now), fallback_key=["v3", ticker, window],
