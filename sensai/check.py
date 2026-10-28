@@ -22,6 +22,8 @@ from sensai.numbers import numbers, words
 
 # their results are text written by others, full of numbers that have nothing to do w/ the question
 TEXT_TOOLS = {"get_news", "web_search", "fetch"}
+# sensai's own tools (loop.py), their args and results hold no data, the note would source itself
+LOCAL = {"plan", "update_note"}
 
 
 def _from_text(text, label, out, anchor=False):
@@ -64,32 +66,44 @@ def _parse(content, label, out, anchor):
 
 
 def sources(messages):
-    """-> [{value, label, pct, frac, words, anchor}] from the history: tool results, tool call args and
-    the questions
+    """-> [{value, label, ref, pct, frac, words, anchor}] from the history: tool results, tool call args
+    and the questions
 
     tool results of the last question are labeled like its steps (`get_prices, step 2`), older
-    ones `earlier`, failed calls and the plan tool hold no data
+    ones `earlier`, failed calls, the plan and the note hold no data
+    the ref carries the question nb (`q2 get_prices step 1`) for the note, which spans questions
     """
     last_q = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
-    out, step = [], 0
+    out, step, q = [], 0, 0
+
+    def tag(start, ref):
+        for s in out[start:]:
+            s["ref"] = ref
+
     for i, m in enumerate(messages):
-        role = m.get("role")
+        role, start = m.get("role"), len(out)
         if role == "user":
+            q, step = q + 1, 0
             _from_text(m.get("content") or "", "the question", out)
+            tag(start, f"q{q} question")
         elif role == "assistant":
             for call in m.get("tool_calls") or []:
                 fn = call.get("function") or {}
+                if fn.get("name") in LOCAL:
+                    continue
+                start = len(out)
                 args = fn.get("arguments") if isinstance(fn.get("arguments"), dict) else {}
                 args = {k: v for k, v in args.items() if k not in ("thought", "code")}
                 _walk(args, f"{fn.get('name')} args", out, ctx=frozenset(words(fn.get("name") or "")))
-        elif role == "tool" and m.get("tool_name") != "plan":
+                tag(start, f"q{q} {fn.get('name')} args")
+        elif role == "tool" and m.get("tool_name") not in LOCAL:
             name = m.get("tool_name", "tool")
-            if i > last_q:
-                step += 1
+            step += 1
             if not (m.get("content") or "").startswith("error:"):
                 now = i > last_q
                 _parse(m["content"], f"{name}, step {step}" if now else f"{name}, earlier", out,
                        anchor=name in TEXT_TOOLS or not now)
+                tag(start, f"q{q} {name} step {step}")
     # this question's results 1st, a number found there and in an old result comes from there
     return sorted(out, key=lambda s: "step" not in s["label"])
 
@@ -180,7 +194,7 @@ def hardcoded(messages, pool):
     for m in messages[last_q + 1:]:
         for call in m.get("tool_calls") or [] if m.get("role") == "assistant" else []:
             fn = call.get("function") or {}
-            if fn.get("name") == "plan":
+            if fn.get("name") in LOCAL:
                 continue
             step += 1
             code = (fn.get("arguments") or {}).get("code") if isinstance(fn.get("arguments"), dict) else None
@@ -199,14 +213,15 @@ def hardcoded(messages, pool):
     return flags
 
 
-def check_answer(text, messages):
-    """-> {n, sourced, derived, unsourced, items, hardcoded}, items in the order of the answer"""
+def check_answer(text, messages, label="label"):
+    """-> {n, sourced, derived, unsourced, items, hardcoded}, items in the order of the answer
+    label="ref" -> the sources w/ their question nb, for the note"""
     pool = sources(messages)
     items = []
     for claim in numbers(text, claims_only=True):
         claim["words"] = words(_line_around(text, claim["start"], claim["end"], 100))
         src = next((s for s in pool if matches(claim, s)), None)
-        items.append({**claim, "status": "sourced" if src else None, "source": src and src["label"]})
+        items.append({**claim, "status": "sourced" if src else None, "source": src and src[label]})
     done = [i for i in items if i["status"] == "sourced"]
     for item in items:
         if item["status"] is None:
