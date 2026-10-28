@@ -13,6 +13,14 @@ class SessionError(Exception):
     """unknown, ambiguous or corrupt session, shown as a plain msg"""
 
 
+def atomic_write(path, text):
+    """tmp file then rename -> a crash mid write cant leave half a file"""
+    path = Path(path)
+    tmp = path.with_name(path.name + ".tmp")
+    tmp.write_text(text, encoding="utf-8")
+    os.replace(tmp, path)
+
+
 class SessionStore:
     def __init__(self, directory):
         self.dir = Path(directory)
@@ -27,11 +35,7 @@ class SessionStore:
         return sid
 
     def save(self, record):
-        # tmp file then rename -> a crash mid write cant leave a half json
-        path = self.dir / f"{record['id']}.json"
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(record, ensure_ascii=False, indent=1), encoding="utf-8")
-        os.replace(tmp, path)
+        atomic_write(self.dir / f"{record['id']}.json", json.dumps(record, ensure_ascii=False, indent=1))
 
     def _read(self, path):
         try:
