@@ -73,6 +73,9 @@ python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of
 | `/check`           | List each number of the last answer, with the tool result it was found in, or why it was flagged |
 | `/judge`           | Have a second model grade the last answer on the data it was given (one model call)              |
 | `/note`            | Print the research note of the session and the path of its file                                  |
+| `/system`          | Print the exact system message the model is given                                                |
+| `/retry`           | Ask the last question again; the new answer replaces the old one once it completes               |
+| `/undo`            | Remove the last question and answer, from the saved session too                                  |
 | `/clear`           | Start a new session; the current one stays saved                                                 |
 | `/sessions`        | List the 10 most recent sessions                                                                 |
 | `/resume <id>`     | Reopen a session (a prefix of the id, or `last`)                                               |
@@ -84,7 +87,7 @@ python -m sensai --resume 20260928-14   # reopen a specific session (a prefix of
 | `/exit`            | Quit (Ctrl+D works too)                                                                          |
 
 **Ctrl+C** during an answer stops it and returns to the prompt. The interrupted question is
-dropped from the conversation, so you can ask it again.
+dropped from the conversation, and `/retry` sends it again.
 
 ### Typing in the chat
 
@@ -92,7 +95,7 @@ dropped from the conversation, so you can ask it again.
 | --- | --- |
 | ← → | Move in the line to fix a typo |
 | ↑ ↓ | Go through your past inputs, including the ones of earlier runs |
-| Tab | Complete a command: `/ste` becomes `/steps`. When several match (`/re`), a second Tab lists them (`/remember /resume`). It also completes `/profile setup` and `/profile edit`, and the session ids after `/resume` |
+| Tab | Complete a command: `/ste` becomes `/steps`. When several match (`/re`), a second Tab lists them (`/remember /resume /retry`). It also completes `/profile setup` and `/profile edit`, and the session ids after `/resume` |
 | `"""` on its own line | Start a multi-line question: the prompt turns into `...`, and the next `"""` line sends everything as one question. Ctrl+C or Ctrl+D inside the block cancels it |
 
 To paste a block of text (a table, a list of tickers, an error message), type `"""`, paste, then
@@ -143,7 +146,7 @@ empty input, type a question or /help
 ```
 
 Ctrl+C during an answer prints `[interrupted]` and returns to the prompt; the question is
-dropped from the history, so you can ask it again.
+dropped from the history, and `/retry` sends it again.
 
 ### Profile and saved sessions (M1)
 
@@ -576,6 +579,93 @@ $ diff note_q2.md note_q3.md
 
 `python -m sensai --resume` brings the session back with its note, and `/note` prints it again.
 
+### Retry, undo and the system message
+
+After an error or Ctrl+C, the question is still in memory and `/retry` sends it again:
+
+```
+> How did NVDA do over the last 30 days, and what was its last close?
+
+[interrupted]
+
+> /sessions
+no saved session yet
+
+> /retry
+retrying: How did NVDA do over the last 30 days, and what was its last
+Plan:
+  1. Get NVDA prices for the last 30 days.
+Thought: Fetch NVDA prices for the last 30 days to determine performance and last close.
+⚙ get_prices(start=2026-10-02, ticker=NVDA)  0.0s ✓
+NVDA declined -12.53% over the last 30 days, with a last close of 204.64.
+
+checked: 2 numbers, all found in the tool results
+```
+
+`/retry` after a normal answer replaces that answer, once the new one has completed. If the new
+attempt fails, the old answer stays. To try the same question on another model, run `/model <name>`
+and then `/retry`.
+
+`/undo` removes the last question with all that came with it: the tool calls and their results,
+the answer and its trace. The saved session follows, and so does `--resume`:
+
+```
+> And SPY over the same 30 days?
+Thought: Fetch SPY prices for the same 30-day period to compare with NVDA.
+⚙ get_prices(start=2026-10-02, ticker=SPY)  0.2s ✓
+SPY declined -1.81% over the same 30 days, with a last close of 755.72.
+
+checked: 2 numbers, all found in the tool results
+
+> /sessions
+* 20261101-171008  2026-11-01 17:10    2 turns  gemma4:31b     How did NVDA do over the last 30 days, and what was its last
+
+> /undo
+undone: And SPY over the same 30 days? (1 turn left)
+
+> /sessions
+* 20261101-171008  2026-11-01 17:10    1 turns  gemma4:31b     How did NVDA do over the last 30 days, and what was its last
+```
+
+If the question edited the research note, `/undo` also prints `note back to before that question`,
+and the note and its file return to their earlier state. Undoing the only question of a session
+deletes its saved file, and `--resume` then opens the session before it.
+
+`/system` prints the exact message sent at the start of each request: the prompt from `config.yaml`,
+today's date, the tools and their limits, the working rules and your profile. Shortened here:
+
+```
+> /remember my focus this week is NVDA earnings
+noted (1 note(s)), /profile to see them
+
+> /system
+You are sensai, a research assistant for quantitative developers and researchers. ...
+
+Today is Sunday 2026-11-01.
+
+Your tools come from these MCP servers:
+- quant-data (get_prices, get_fundamentals, get_news, get_sentiment): Market data for quant research: ...
+...
+
+About the user:
+- Name: Jad
+- Sectors followed: semiconductors, AI hardware
+- Main tickers: NVDA, AMD, TSM
+- Benchmark: SPY
+- Research style: concise, formula before the number
+- Always keep in mind:
+  - my focus this week is NVDA earnings
+```
+
+The limits of these commands:
+
+- `/undo` can't be reversed. The question stays in your input history, so ↑ brings it back.
+- `/retry` calls the model and the tools again, which uses quota, and the new answer can differ.
+- A failed question is kept in memory only. After you quit, ↑ still recalls it, `/retry` doesn't.
+- Files the tools wrote (charts and scripts in `out/`) and cached data stay on disk after `/undo`.
+- `/system` shows the system message. The tool definitions travel in another field of the request;
+  `/tools` lists the tools.
+
 ### Things to try
 
 | Type this                                                                           | You should see                                                                         |
@@ -596,6 +686,9 @@ $ diff note_q2.md note_q3.md
 | `how did NVDA do vs SPY over the last year?`, then `/check` | `checked: ... all found in the tool results` under the answer, then each number with the step it comes from |
 | `make a pie chart of the market share of the biggest chip makers`, then `/judge` | web searches, a chart, a ✗ line if the code types in its own numbers, then the judge's scores |
 | `how did NVDA do vs SPY over the last year?`, `what is its beta to SPY on daily returns?`, then `/note` | `✎ note: ...` lines before each answer, then the note with a source next to each number |
+| `/remember my focus is NVDA earnings`, then `/system` | the note you just added, at the end of the message the model is given |
+| a question, then Ctrl+C during the answer, then `/retry` | `[interrupted]`, then the full answer to the same question |
+| 2 questions, then `/undo`, then `/sessions` | the last question removed, 1 turn less in the list |
 
 ### Our MCP server on its own
 
@@ -873,8 +966,8 @@ The model gets the section back as written, with its sources, and a later `repla
 was there.
 
 The note is saved with the session and comes back with `--resume`. `/clear` starts a new session
-with an empty note. If a question fails or is interrupted with Ctrl+C, the note goes back to its
-state before the question, like the conversation. The evaluation runs without the note tool to keep
+with an empty note. If a question fails or is interrupted with Ctrl+C, or you remove it with `/undo`,
+the note goes back to its state before the question, like the conversation. The evaluation runs without the note tool to keep
 its scores comparable with earlier runs.
 
 ### Structured output (T5)
@@ -978,7 +1071,7 @@ every week. Some models listed by `/model` are paid only.
 | `this model isnt in the free tier`                  | Pick another model; this one needs a paid plan                                                                                                                  |
 | `cloud quota hit, wait for the reset`               | The free tier limit is reached; it resets after 5 hours (or weekly)                                                                                             |
 | `can't reach ..., check the connection`             | Check your internet connection or the `--host` value                                                                                                          |
-| `connection lost mid answer`                        | Ask again; the interrupted question was not kept                                                                                                                |
+| `connection lost mid answer`                        | `/retry` sends the question again; the interrupted one was not kept in the conversation                                                                                                                |
 | `invalid yaml in .../profile.yaml`                  | Fix the file with `/profile edit`; sensai keeps running without a profile meanwhile                                                                           |
 | `MASSIVE_API_KEY is missing`                        | Get a free key at massive.com and add it to `.env`                                                                                                            |
 | `massive rate limit (5 calls/min on the free plan)` | Wait a minute; cached news keeps working meanwhile                                                                                                              |
@@ -1024,3 +1117,4 @@ folders instead of your real `~/.sensai` and `data/`.
 | [#17](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/17) | T3 web search and tool limits        | Done    |
 | [#14](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/14) | Line editing, input history and multi-line questions | Done |
 | [#20](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/20) | T5 structured output (the judge and the note edits) | Done |
+| [#15](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/15) | `/retry`, `/undo` and `/system` commands | Done |
