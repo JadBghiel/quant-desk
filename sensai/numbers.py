@@ -14,7 +14,8 @@ MONTH = r"(?:jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec)[a-z]*\.?"
 MASKS = [re.compile(p, re.I | re.M) for p in (
     r"```.*?```", r"`[^`\n]*`",
     r"\b(?:https?|sandbox|file)://\S+", r"\]\([^)]*\)",
-    r"[\w./-]+\.(?:png|jpe?g|svg|csv|json|py|md|txt|pdf)\b",
+    # starts at the 1st char of a path only, from every char 64k of digits took over 10s
+    r"(?<![\w./-])[\w./-]+\.(?:png|jpe?g|svg|csv|json|py|md|txt|pdf)\b",
     r"\b\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?",
     r"\b\d{1,2}/\d{1,2}/\d{2,4}\b",
     r"\b(?:19|20)\d{2}\s?[/-]\s?(?:(?:19|20)\d{2}|\d{2})\b",  # 2023/24, 2025-2026
