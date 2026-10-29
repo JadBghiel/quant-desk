@@ -18,6 +18,7 @@ except ImportError:  # windows w/o pyreadline, plain input() and the blocks stil
 
 BLOCK = '"""'
 HISTORY_LEN = 1000
+MAX_INPUT = 50000  # chars, ~12k tokens, a 1MB paste would spend the quota on 1 call
 SUBCMDS = {"/profile": ["setup", "edit"]}
 
 
@@ -83,6 +84,20 @@ def remember(text):
         pass
 
 
+def clean(text):
+    """invalid bytes come out of input() as lone surrogates, print and readline cant take them"""
+    return text.encode("utf-8", "replace").decode("utf-8").strip()
+
+
+def refusal(text):
+    """why this input doesnt go to the model, None when it can"""
+    if not text:
+        return "empty input, type a question or /help"
+    if len(text) > MAX_INPUT:
+        return f"input too long: {len(text):,} characters, {MAX_INPUT:,} max. Save it in a file or cut it"
+    return None
+
+
 def read_input(read=None):
     """1 question or cmd, None when the user quits (Ctrl+D or Ctrl+C at the prompt)
     a line w/ 3 double quotes alone opens a block, the next 1 sends it as 1 question"""
@@ -96,7 +111,7 @@ def read_input(read=None):
             print()
             return None
         if line.strip() != BLOCK:
-            return line.strip()
+            return clean(line)
         lines = []
         try:
             while (line := read("... ")).strip() != BLOCK:
@@ -104,7 +119,7 @@ def read_input(read=None):
         except (EOFError, KeyboardInterrupt):
             print("\nblock cancelled")
             continue
-        return "\n".join(lines).strip()
+        return clean("\n".join(lines))
 
 
 def repl(session, intro=None):
@@ -116,8 +131,9 @@ def repl(session, intro=None):
         text = read_input()
         if text is None:
             return
-        if not text:
-            print("empty input, type a question or /help")
+        why = refusal(text)
+        if why:
+            print(why)
             continue
         remember(text)
         if text.startswith("/"):

@@ -17,7 +17,8 @@ def atomic_write(path, text):
     """tmp file then rename -> a crash mid write cant leave half a file"""
     path = Path(path)
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text, encoding="utf-8")
+    # a lone surrogate (invalid bytes in a tool result) stays as an escape, utf-8 cant write it
+    tmp.write_text(text, encoding="utf-8", errors="backslashreplace")
     os.replace(tmp, path)
 
 
