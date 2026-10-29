@@ -37,6 +37,9 @@ class SessionStore:
     def save(self, record):
         atomic_write(self.dir / f"{record['id']}.json", json.dumps(record, ensure_ascii=False, indent=1))
 
+    def delete(self, session_id):
+        (self.dir / f"{session_id}.json").unlink(missing_ok=True)
+
     def _read(self, path):
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
