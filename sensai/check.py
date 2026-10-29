@@ -5,6 +5,9 @@ no model call, runs after every answer. a number is
   at the precision it was written w/ (217.15 matches 217.1499, 26% matches 0.2601)
 - derived: a - b, a / b or the % change of 2 sourced numbers of the same answer
 - unsourced: none of the above -> flagged under the answer
+a sourced number found only in free text (news, web, fetched pages) is marked text_only: anyone can
+write in those, a poisoned article sources its own made up number. the label says unverified, it
+doesnt say false, and code output doesnt count as text (a number copied into run_python loses it)
 a match says the number exists in the sources, whether it was used for the right thing is for the
 judge (judge.py)
 
@@ -76,9 +79,9 @@ def sources(messages):
     last_q = max((i for i, m in enumerate(messages) if m.get("role") == "user"), default=-1)
     out, step, q = [], 0, 0
 
-    def tag(start, ref):
+    def tag(start, ref, text=False):
         for s in out[start:]:
-            s["ref"] = ref
+            s["ref"], s["text"] = ref, text
 
     for i, m in enumerate(messages):
         role, start = m.get("role"), len(out)
@@ -95,7 +98,7 @@ def sources(messages):
                 args = fn.get("arguments") if isinstance(fn.get("arguments"), dict) else {}
                 args = {k: v for k, v in args.items() if k not in ("thought", "code")}
                 _walk(args, f"{fn.get('name')} args", out, ctx=frozenset(words(fn.get("name") or "")))
-                tag(start, f"q{q} {fn.get('name')} args")
+                tag(start, f"q{q} {fn.get('name')} args", fn.get("name") in TEXT_TOOLS)
         elif role == "tool" and m.get("tool_name") not in LOCAL:
             name = m.get("tool_name", "tool")
             step += 1
@@ -103,7 +106,7 @@ def sources(messages):
                 now = i > last_q
                 _parse(m["content"], f"{name}, step {step}" if now else f"{name}, earlier", out,
                        anchor=name in TEXT_TOOLS or not now)
-                tag(start, f"q{q} {name} step {step}")
+                tag(start, f"q{q} {name} step {step}", name in TEXT_TOOLS)
     # this question's results 1st, a number found there and in an old result comes from there
     return sorted(out, key=lambda s: "step" not in s["label"])
 
@@ -221,7 +224,10 @@ def check_answer(text, messages, label="label"):
     for claim in numbers(text, claims_only=True):
         claim["words"] = words(_line_around(text, claim["start"], claim["end"], 100))
         src = next((s for s in pool if matches(claim, s)), None)
-        items.append({**claim, "status": "sourced" if src else None, "source": src and src[label]})
+        # a structured source has it too -> not text only, the pool is read twice for text matches
+        text_only = bool(src and src["text"]) and all(s["text"] for s in pool if matches(claim, s))
+        items.append({**claim, "status": "sourced" if src else None, "source": src and src[label],
+                      "text_only": text_only})
     done = [i for i in items if i["status"] == "sourced"]
     for item in items:
         if item["status"] is None:
@@ -230,6 +236,6 @@ def check_answer(text, messages, label="label"):
         item["context"] = " ".join(_line_around(text, item["start"], item["end"], 40).split())
     counts = {s: sum(i["status"] == s for i in items) for s in ("sourced", "derived", "unsourced")}
     return {"n": len(items), **counts,
-            "items": [{k: i[k] for k in ("text", "value", "status", "source", "context", "start", "end")}
+            "items": [{k: i[k] for k in ("text", "value", "status", "source", "text_only", "context", "start", "end")}
                       for i in items],
             "hardcoded": hardcoded(messages, pool)}

@@ -114,13 +114,17 @@ def _n(count, word):
 def check_block(checks, tty=True):
     """the ev1 lines under the answer, "" when the answer doesnt have a number
     1 line when all are found, else the counts + 1 ✗ line per number not found w/ the words around
-    it, + 1 line per run_python step that types data in"""
+    it, + 1 line per run_python step that types data in, + 1 line w/ the numbers only in news or web text"""
     if not checks or not (checks.get("n") or checks.get("hardcoded")):
         return ""
     dim, reset, red = (DIM, RESET, RED) if tty else ("", "", "")
     n, derived, missing = checks["n"], checks["derived"], checks["unsourced"]
     code = [f"  {red}✗{reset} run_python (step {h['step']}) types in {h['count']} numbers not found in the tool "
             f"results {dim}{h['sample']}{reset}" for h in checks.get("hardcoded") or []]
+    text = list(dict.fromkeys(i["text"] for i in checks.get("items") or [] if i.get("text_only")))
+    if text:
+        code.append(f"{dim}{len(text)} only in news or web text, unverified: {', '.join(text[:6])}"
+                    f"{', ...' if len(text) > 6 else ''}{reset}")
     if not missing:
         how = f", {derived} derived from them" if derived else ""
         head = f"{dim}checked: {_n(n, 'number')}, all found in the tool results{how}{reset}" if n else ""
@@ -150,6 +154,7 @@ def format_checks(checks, tty=True):
     for i in checks["items"]:
         color = {"sourced": green, "unsourced": red}.get(i["status"], "")
         where = {"sourced": i["source"], "derived": f"derived: {i['source']}"}.get(i["status"], "not found")
+        where += " (text only)" if i.get("text_only") else ""
         lines.append(f"  {color}{MARKS[i['status']]}{reset} {i['text']:<{width}}  {where:<26} {dim}{i['context'][:70]}{reset}")
     return "\n".join(lines + code)
 
