@@ -8,9 +8,8 @@ between 2 lines of 3 double quotes
 
 import os
 
-from sensai.commands import CMDS, handle_cmd
+from sensai.commands import CMDS, handle_cmd, send
 from sensai.home import user_dir
-from sensai.ollama import OllamaError
 
 try:
     import readline
@@ -125,10 +124,4 @@ def repl(session, intro=None):
             if handle_cmd(session, text):
                 return
             continue
-        try:
-            session.ask(text)
-            print()
-        except KeyboardInterrupt:
-            print("\n[interrupted]")
-        except OllamaError as e:
-            print(f"\n[error] {e}")
+        send(lambda: session.ask(text))

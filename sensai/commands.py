@@ -4,6 +4,7 @@ import sys
 
 from sensai import judge, note
 from sensai import profile as prof
+from sensai.chat import NOTE_KEPT
 from sensai.react import format_trace
 from sensai.ollama import OllamaError
 from sensai.sessions import SessionError
@@ -19,6 +20,9 @@ HELP = """cmds:
   /check            each number of the last answer and where it was found
   /judge            a 2nd model grades the last answer on its data (1 model call)
   /note             the research note of this session and its file
+  /system           the exact system msg the model is given
+  /retry            ask the last question again, the new answer replaces the old one
+  /undo             remove the last question and answer, from the saved session too
   /clear            start a new session, the current one stays saved
   /sessions         the 10 most recent sessions
   /resume <id>      reopen a session (a prefix of the id or "last" works)
@@ -46,7 +50,20 @@ def handle_cmd(session, text):
         handler(session, arg)
     except (OllamaError, SessionError, prof.ProfileError, judge.JudgeError) as e:
         print(f"[error] {e}")
+    except KeyboardInterrupt:  # /judge and /model wait on the network
+        print("\n[interrupted]")
     return False
+
+
+def send(ask):
+    """1 question to the model, same msgs for a typed question and /retry"""
+    try:
+        ask()
+        print()
+    except KeyboardInterrupt:
+        print("\n[interrupted]")
+    except OllamaError as e:
+        print(f"\n[error] {e}")
 
 
 def count_turns(messages):
@@ -132,6 +149,35 @@ def cmd_note(session, arg):
         tty = sys.stdout.isatty()
         dim, reset = (DIM, RESET) if tty else ("", "")
         print(f"{dim}file:{reset} {file_link(path, tty)}")
+
+
+def cmd_system(session, arg):
+    print(session.messages[0]["content"])
+
+
+def cmd_retry(session, arg):
+    text = session.last_question()
+    if text is None:
+        print("nothing to retry")
+        return
+    dim, reset = (DIM, RESET) if sys.stdout.isatty() else ("", "")
+    print(f"{dim}retrying: {' '.join(text.split())[:60]}{reset}")
+    send(session.retry)
+
+
+def cmd_undo(session, arg):
+    turn = session.undo()
+    if turn is None:
+        print("nothing to undo")
+        return
+    text = " ".join(turn["messages"][0]["content"].split())[:60]
+    left = count_turns(session.turns())
+    gone = ", session file removed" if not left and session.store else ""
+    print(f"undone: {text} ({left} turn{'' if left == 1 else 's'} left{gone})")
+    if "note_before" in (turn["trace"] or {}):
+        print("note back to before that question")
+    elif turn["note_kept"]:
+        print(NOTE_KEPT)
 
 
 def cmd_tools(session, arg):
@@ -230,6 +276,9 @@ CMDS = {
     "/check": cmd_check,
     "/judge": cmd_judge,
     "/note": cmd_note,
+    "/system": cmd_system,
+    "/retry": cmd_retry,
+    "/undo": cmd_undo,
     "/model": cmd_model,
     "/clear": cmd_clear,
     "/sessions": cmd_sessions,
