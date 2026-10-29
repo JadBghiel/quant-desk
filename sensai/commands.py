@@ -2,7 +2,7 @@
 
 import sys
 
-from sensai import judge, note
+from sensai import judge, note, sandbox
 from sensai import profile as prof
 from sensai.chat import NOTE_KEPT
 from sensai.react import format_trace
@@ -180,6 +180,12 @@ def cmd_undo(session, arg):
         print(NOTE_KEPT)
 
 
+def sandbox_warning(hub):
+    """the warning when run_python is on and not isolated, "" otherwise"""
+    up = hub and any("run_python" in s["tools"] for s in hub.servers.values() if s["status"] == "up")
+    return sandbox.isolation_warning() if up else ""
+
+
 def cmd_tools(session, arg):
     hub = session.hub
     if not hub or not hub.servers:
@@ -190,6 +196,9 @@ def cmd_tools(session, arg):
             print(f"{name}: {', '.join(srv['tools']) or '(no tools)'}")
         else:
             print(f"{name}: down, {srv['status']}")
+    warning = sandbox_warning(hub)
+    if warning:
+        print(warning)
 
 
 def cmd_model(session, arg):

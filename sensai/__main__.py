@@ -6,7 +6,7 @@ import sys
 from sensai import __version__
 from sensai import profile as prof
 from sensai.chat import Session
-from sensai.commands import resumed_msg
+from sensai.commands import resumed_msg, sandbox_warning
 from sensai.config import ConfigError, load_config
 from sensai.home import user_dir
 from sensai.mcp_client import ToolHub
@@ -99,7 +99,7 @@ def main(argv=None):
                           hub=hub, max_steps=cfg.get("max_steps", 12),
                           token_budget=cfg.get("token_budget", 60000), show_trace=args.trace,
                           judge_model=cfg.get("judge_model"))
-        intro = [tools_msg(hub)]
+        intro = [tools_msg(hub), *filter(None, [sandbox_warning(hub)])]
         if record:
             session.load_record(record)
             intro.append(resumed_msg(session, record, sys.stdout.isatty()))

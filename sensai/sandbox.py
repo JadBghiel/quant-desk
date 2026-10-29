@@ -47,6 +47,17 @@ def pick_backend(backend=None):
     return backend
 
 
+def isolation_warning():
+    """1 line for the user when the code the model writes can reach their files, "" under docker"""
+    try:
+        if pick_backend() != "subprocess":
+            return ""
+    except ValueError:
+        return ""
+    return ("[warning] run_python isnt isolated: without Docker, the code the model writes can read your files, "
+            ".env included, and use the network. Start Docker to isolate it")
+
+
 def cache_dir():
     """shared by all runs -> matplotlib builds its font cache (~7s) once for all of them"""
     d = out_dir() / ".cache"
