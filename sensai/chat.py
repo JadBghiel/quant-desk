@@ -34,7 +34,7 @@ def _now():
 class Session:
     def __init__(self, client, model, system_prompt=None, show_thinking=True, store=None,
                  profile=None, profile_path=None, hub=None, max_steps=12, token_budget=60000,
-                 show_trace=False, judge_model=None, notes=True):
+                 show_trace=False, judge_model=None, notes=True, guard=True):
         self.client = client
         # ev1: /judge asks this model, the chat model when the cfg has none
         self.judge_model = judge_model or model
@@ -45,6 +45,8 @@ class Session:
         self.show_trace = show_trace
         # m4: the update_note tool + its rule, off in the eval -> its scores stay comparable
         self.notes = notes
+        # ev4: the rule on instructions inside tool results, off in the eval like the note
+        self.guard = guard
         self.model = model
         self.system_prompt = system_prompt
         self.show_thinking = show_thinking
@@ -60,7 +62,7 @@ class Session:
         tools = None
         if self.hub and self.hub.servers:
             names = [t["function"]["name"] for t in self.hub.tools]
-            tools = self.hub.capabilities() + "\n\n" + react.rules(names, self.notes)
+            tools = self.hub.capabilities() + "\n\n" + react.rules(names, self.notes, self.guard)
         return build_system(self.system_prompt, self.profile, tools)
 
     def turns(self):

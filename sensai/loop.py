@@ -81,6 +81,8 @@ def answer(session, out, tty, trace):
                 trace.add_step(thought, name, args, ok, secs, result)
                 fails = 0 if ok else fails + 1
                 saved += [f for f in react.result_files(result) if f not in saved] if ok else []
+        if session.guard and any((c.get("function") or {}).get("name") in check.TEXT_TOOLS for c in calls):
+            nudge = react.GUARD_NUDGE
 
 
 def show_footer(out, content, checks, paths, tty, note_line=""):
