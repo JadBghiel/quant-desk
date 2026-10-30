@@ -23,6 +23,7 @@ def parse_args(argv=None):
     p.add_argument("--resume", nargs="?", const="last", metavar="ID",
                    help="reopen a saved session, the last one if no id is given (a prefix works)")
     p.add_argument("--trace", action="store_true", help="show the details of each step (results, tokens)")
+    p.add_argument("--pretty", action="store_true", help="show answers as formatted text instead of raw markdown")
     p.add_argument("--version", action="version", version=f"sensai {__version__}")
     return p.parse_args(argv)
 
@@ -98,7 +99,7 @@ def main(argv=None):
                           store=store, profile=profile, profile_path=profile_path,
                           hub=hub, max_steps=cfg.get("max_steps", 12),
                           token_budget=cfg.get("token_budget", 60000), show_trace=args.trace,
-                          judge_model=cfg.get("judge_model"))
+                          judge_model=cfg.get("judge_model"), pretty=args.pretty)
         intro = [tools_msg(hub), *tool_warnings(hub)]
         if record:
             session.load_record(record)

@@ -16,6 +16,7 @@ HELP = """cmds:
   /think            show or hide the model's thinking
   /tools            the MCP servers and the tools the model can call
   /trace            show or hide the details of each step (results, tokens)
+  /pretty           show answers as formatted text or as raw markdown
   /steps            the trace of the last answer: plan, every step, tokens
   /check            each number of the last answer and where it was found
   /judge            a 2nd model grades the last answer on its data (1 model call)
@@ -107,6 +108,11 @@ def cmd_think(session, arg):
 def cmd_trace(session, arg):
     session.show_trace = not session.show_trace
     print(f"step details {'shown' if session.show_trace else 'hidden'}")
+
+
+def cmd_pretty(session, arg):
+    session.pretty = not session.pretty
+    print(f"pretty print {'on' if session.pretty else 'off'}")
 
 
 def cmd_steps(session, arg):
@@ -292,6 +298,7 @@ CMDS = {
     "/think": cmd_think,
     "/tools": cmd_tools,
     "/trace": cmd_trace,
+    "/pretty": cmd_pretty,
     "/steps": cmd_steps,
     "/check": cmd_check,
     "/judge": cmd_judge,
