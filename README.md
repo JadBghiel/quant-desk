@@ -877,6 +877,8 @@ npx @modelcontextprotocol/inspector .venv/bin/python -m sensai.servers.sandbox
 
 ## Features
 
+[USER_STORIES.md](USER_STORIES.md) gives the use case of each feature, with its acceptance criteria.
+
 ### Streaming chat with history (B1)
 
 Answers are streamed as they are generated, and the whole conversation is sent back to the model
@@ -1433,3 +1435,4 @@ folders instead of your real `~/.sensai` and `data/`.
 | [#21](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/21) | EV4 adversarial tests                                | Done   |
 | [#11](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/11) | R1 RAG over the news (`search_news`)               | Done   |
 | [#24](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/24) | `/pretty`, formatted answers in the terminal       | Done   |
+| [#12](https://github.com/EpitechPGE3-2026/G-AIA-500-MAD-5-1-sensai-1/issues/12) | [User stories](USER_STORIES.md)                    | Done   |
