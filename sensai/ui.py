@@ -1,12 +1,16 @@
-"""terminal bits: ansi codes, the thinking spinner, the tool call lines and file links"""
+"""terminal bits: ansi codes, the thinking spinner, the tool call lines, file links and the /pretty renderer"""
 
 import base64
 import os
+import re
+import shutil
 import threading
 import time
+import unicodedata
 from pathlib import Path
+from urllib.parse import urlsplit
 
-DIM, RESET, CLEAR_LINE = "\033[2m", "\033[0m", "\r\033[K"
+DIM, BOLD, RESET, CLEAR_LINE = "\033[2m", "\033[1m", "\033[0m", "\r\033[K"
 GREEN, RED = "\033[32m", "\033[31m"
 FRAMES = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
 
@@ -63,6 +67,11 @@ def file_link(path, tty=True):
     return f"\033]8;;{Path(path).resolve().as_uri()}\033\\{path}\033]8;;\033\\"
 
 
+def web_link(url, label):
+    """a web url behind a label (OSC 8), file_link is the 1 for local paths"""
+    return f"\033]8;;{url}\033\\{label}\033]8;;\033\\"
+
+
 # terminals that draw images sent w/ the iTerm2 protocol, VS Code needs terminal.integrated.enableImages
 IMAGE_TERMS = {"vscode", "iTerm.app", "WezTerm"}
 IMAGE_EXTS = {".png", ".jpg", ".jpeg", ".gif"}
@@ -84,6 +93,132 @@ def inline_image(path, tty=True, width="60%"):
     name = base64.b64encode(path.name.encode()).decode()
     return (f"\033]1337;File=name={name};size={len(data)};inline=1;width={width};preserveAspectRatio=1:"
             f"{base64.b64encode(data).decode()}\a")
+
+
+# terminals known to open OSC 8 links, the others keep the full url or the address would be lost
+LINK_TERMS = {"vscode", "iTerm.app", "WezTerm"}
+
+# no space or control char -> no escape code can get inside the OSC 8 sequence, 1 level of () kept for wikipedia style urls
+URL = r"https?://(?:[^\s<>()\[\]`\x00-\x1f\x7f]|\([^\s<>()\x00-\x1f\x7f]*\))+"
+# ** next to a word char isnt bold: 2**3**4 would print as 234. spans capped -> a line full of ** stays linear
+INLINE = re.compile(r"`(?P<code>[^`\n]+)`"
+                    r"|(?<![\w*])\*\*(?=\S)(?P<bold>.{1,500}?)(?<=\S)\*\*(?![\w*])"
+                    r"|\[(?P<text>[^\]\n]{1,300})\]\((?P<target>" + URL + r")\)"
+                    r"|(?P<url>" + URL + ")")
+TITLE = re.compile(r"#{1,3}[ \t]+(.+)")
+BULLET = re.compile(r"(\s*)[-*][ \t]+(.*)")
+TABLE_SEP = re.compile(r"\s*\|?\s*:?-+:?\s*(\|\s*:?-+:?\s*)*\|?\s*")
+STYLES = re.compile(r"\033\]8;;.*?\033\\|\033\[[0-9;]*m")
+
+
+def visible_len(text):
+    """columns the text takes on screen: w/o the styles and links, wide chars count 2"""
+    return sum(2 if unicodedata.east_asian_width(c) in "WF" else 1 for c in STYLES.sub("", text))
+
+
+def table_cells(line):
+    line = line.strip().removeprefix("|").removesuffix("|")
+    return [c.strip() for c in re.split(r"(?<!\\)\|", line)]
+
+
+class LineRenderer:
+    """/pretty: the model's markdown as real text, display only, the raw text stays in the history
+
+    holds the text until a line is complete, a table until it ends. each line's newline waits for
+    the next line -> a dropped code fence takes it over and the output ends w/ a newline when the raw
+    text does, the blank lines of the loop read content.endswith("\\n")
+    """
+
+    def __init__(self, width=None, links=None):
+        self.width = width
+        self.links = os.environ.get("TERM_PROGRAM") in LINK_TERMS if links is None else links
+        self.hold = ""
+        self.owed = ""
+        self.table = []  # (line, newline)
+        self.code = False
+
+    def feed(self, text):
+        """-> what can be printed now, "" while the line isnt complete"""
+        *lines, self.hold = (self.hold + text).split("\n")
+        return "".join(self._line(line, "\n") for line in lines)
+
+    def finish(self):
+        """-> the rest: the last line, a table still held, the newline owed"""
+        hold, self.hold = self.hold, ""
+        shown = (self._line(hold, "") if hold else "") + self._end_table()
+        owed, self.owed = self.owed, ""
+        return shown + owed
+
+    def _emit(self, text, newline):
+        shown = self.owed + text
+        self.owed = newline
+        return shown
+
+    def _line(self, line, newline):
+        if line.lstrip().startswith("```"):
+            shown = self._end_table()
+            self.code = not self.code
+            self.owed = newline if self.owed else ""
+            return shown
+        if self.code:
+            return self._emit(f"{DIM}{line}{RESET}" if line else "", newline)
+        if line.lstrip().startswith("|"):
+            self.table.append((line, newline))
+            return ""
+        return self._end_table() + self._emit(self._style(line), newline)
+
+    def _style(self, line):
+        title = TITLE.fullmatch(line)
+        if title:
+            return f"{BOLD}{self._inline(title[1], False)}{RESET}"
+        bullet = BULLET.fullmatch(line)
+        if bullet:
+            return f"{bullet[1]}• {self._inline(bullet[2])}"
+        return self._inline(line)
+
+    def _inline(self, text, styled=True):
+        """styled=False inside a bold span or a title: the markers go, the bold stays on"""
+        parts, pos = [], 0
+        for m in INLINE.finditer(text):
+            parts.append(text[pos:m.start()])
+            pos = m.end()
+            if m["code"] is not None:
+                parts.append(f"{DIM}{m['code']}{RESET}" if styled else m["code"])
+            elif m["bold"] is not None:
+                inner = self._inline(m["bold"], False)
+                parts.append(f"{BOLD}{inner}{RESET}" if styled else inner)
+            elif m["target"] is not None:
+                parts.append(f"{self._inline(m['text'], styled)} ({self._link(m['target'])})")
+            else:
+                url = m["url"].rstrip(".,;:!?'\"*")
+                parts.append(self._link(url) + m["url"][len(url):])
+        return "".join(parts) + text[pos:]
+
+    def _link(self, url):
+        """the real host + an arrow behind the link -> a [fool.com](evil.com) shows evil.com"""
+        host = urlsplit(url).hostname if self.links else None
+        return web_link(url, f"{host.removeprefix('www.')} ↗") if host else url
+
+    def _end_table(self):
+        """the lines held -> aligned columns, raw when too wide, normal lines w/o a separator row"""
+        rows, self.table = self.table, []
+        if not rows:
+            return ""
+        lines = [line for line, _ in rows]
+        if len(lines) < 2 or not TABLE_SEP.fullmatch(lines[1]):
+            return "".join(self._emit(self._style(line), newline) for line, newline in rows)
+        cells = [table_cells(line) for line in lines[:1] + lines[2:]]
+        n = max(len(row) for row in cells)
+        shown = [[self._inline(c, i > 0) for c in row] + [""] * (n - len(row)) for i, row in enumerate(cells)]
+        widths = [max(visible_len(row[col]) for row in shown) for col in range(n)]
+        if sum(widths) + 2 * (n - 1) > (self.width or shutil.get_terminal_size().columns):
+            return self._emit("\n".join(lines), rows[-1][1])
+
+        def join(row):
+            return "  ".join([c + " " * (w - visible_len(c)) for c, w in zip(row, widths[:-1])] + row[-1:])
+
+        out = [f"{BOLD}{join(shown[0])}{RESET}", f"{DIM}{'  '.join('─' * w for w in widths)}{RESET}"]
+        return self._emit("\n".join(out + [join(row) for row in shown[1:]]), rows[-1][1])
 
 
 def fmt_args(args, width=70):
