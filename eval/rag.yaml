@@ -1,0 +1,90 @@
+# r1 eval for python -m sensai.eval --rag: the search on the frozen news of 2026-10-28, no cloud call
+# relevant: title fragments of the articles a person would pick for the question, labelled by hand from
+#   the frozen articles before any search ran. they are 1 judgement on a small set, a guide to compare 2 versions
+# no dates = the last 30 days
+
+questions:
+  - id: drop-oct-22
+    q: why did Nvidia and AI stocks fall
+    ticker: NVDA
+    start: "2026-10-22"
+    end: "2026-10-22"
+    relevant:
+      - CoreWeave Slides on Bernstein Downgrade
+      - "Zacks Investment Ideas feature highlights: CoreWeave and Nvidia"
+      - What Happens to AI Stocks if the Fed Hikes Rates Again
+
+  - id: china-sales
+    q: Nvidia chip sales and orders in China
+    ticker: NVDA
+    relevant:
+      - China AI Chip Shipments Fall 44%
+      - $35 Billion In Chip Orders From Chinese
+
+  - id: meta-investment
+    q: Nvidia investing in Meta's stock offering
+    ticker: NVDA
+    relevant:
+      - New $3 Billion AI Bet
+      - Nvidia & AMD Bet $4B on Meta
+      - NVIDIA and Meta to Expand Collaboration
+      - Why Meta Is a Good Bet Despite Huge AI Spending
+
+  - id: warehouse-robots
+    q: robots using Nvidia AI to sort returned parcels in a warehouse
+    ticker: NVDA
+    relevant:
+      - Otto Group and Sereact
+
+  - id: quantum
+    q: Nvidia's role in quantum computing
+    ticker: NVDA
+    relevant:
+      - Is Nvidia a Top Quantum Computing Stock
+      - Record Simulation of Fault-Tolerant Quantum
+      - 2 Quantum Computing Stocks That Could Help
+
+  - id: neocloud-debt
+    q: risk of AI cloud companies failing because of their debt
+    ticker: NVDA
+    relevant:
+      - Guppy Level
+      - Neocloud ETF Down 30%
+      - CoreWeave Is Projected to Have a 6.3x
+      - The Bond Market Is Sending a Warning to Nvidia
+      - The AI Rout
+      - Elon Musk Just Explained Why
+
+  - id: inflation-fed
+    q: the AI buildout pushing inflation up and what the Fed does about it
+    ticker: NVDA
+    relevant:
+      - New Source of Inflation
+      - What Happens to AI Stocks if the Fed Hikes Rates Again
+
+  - id: oracle-rubin
+    q: Vera Rubin deployment at Oracle
+    ticker: NVDA
+    relevant:
+      - NVIDIA and Oracle Expand
+
+  - id: custom-chips
+    q: competition for Nvidia from custom AI chips
+    ticker: NVDA
+    relevant:
+      - Here's Which Company Nvidia Needs to Be Worried About
+
+  - id: big-tech-capex
+    q: what big tech capital spending means for Nvidia
+    ticker: NVDA
+    relevant:
+      - Nvidia Investors Should Watch One Number
+      - The AI Rout
+
+  - id: spacex-gpus
+    q: SpaceX buying Nvidia GPUs
+    ticker: NVDA
+    relevant:
+      - Elon Musk Just Gave Fantastic News for Nvidia Investors
+      - Incredible News to Nvidia
+      - 5 Stocks Poised to Win Big as SpaceX

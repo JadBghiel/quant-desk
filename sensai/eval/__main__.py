@@ -1,5 +1,6 @@
 """python -m sensai.eval [--limit n] [--model m] [--judge-model m] [--no-judge] [--only id,id] [--record]
 python -m sensai.eval --attacks [--repeat n] [--no-guard] [--only id,id] [--model m], ev4 in attacks.py
+python -m sensai.eval --rag, r1 in rag.py, the search on labelled questions, no cloud call
 
 each question gets a fresh session w/ the quant-data and sandbox servers (web and fetch cant be
 frozen), a fixed profile (benchmark SPY) and the snapshot's date
@@ -19,7 +20,8 @@ from sensai.chat import Session
 from sensai.config import ConfigError, load_config
 from sensai import sandbox
 from sensai.data import REPO
-from sensai.eval import attacks, report
+from sensai.data import rag as rag_data
+from sensai.eval import attacks, rag, report
 from sensai.eval.runner import run_question
 from sensai.home import user_dir
 from sensai.mcp_client import ToolHub
@@ -28,7 +30,7 @@ from sensai.ollama import OllamaClient, OllamaError, QuotaHit
 EVAL = REPO / "eval"
 SERVERS = ("quant-data", "sandbox")
 # web and fetch started for their real schemas and limits, AttackHub doesnt call them
-ATTACK_SERVERS = (*SERVERS, "web", "fetch")
+ATTACK_SERVERS = (*SERVERS, "web", "fetch", "rag")
 PROFILE = {"benchmark": "SPY"}
 
 
@@ -43,6 +45,7 @@ def parse_args(argv=None):
     p.add_argument("--attacks", action="store_true", help="the attacks of eval/attacks.yaml + the malformed inputs")
     p.add_argument("--repeat", type=int, default=1, help="--attacks: runs of each model attack, the models are random")
     p.add_argument("--no-guard", action="store_true", help="--attacks: w/o the rule on instructions in tool results")
+    p.add_argument("--rag", action="store_true", help="the news search on eval/rag.yaml, no cloud call")
     p.add_argument("--questions", default=str(EVAL / "questions.yaml"))
     p.add_argument("--config", default=str(REPO / "config.yaml"))
     return p.parse_args(argv)
@@ -102,11 +105,29 @@ def run_attacks(args, cfg, client, today):
     return 0
 
 
+def run_rag(args, today):
+    """in this process, the search needs the local ollama and the snapshot"""
+    why = rag_data.unavailable()
+    if why:
+        print(f"sensai.eval: {why}", file=sys.stderr)
+        return 1
+    cases = yaml.safe_load(open(EVAL / "rag.yaml", encoding="utf-8"))["questions"]
+    keep = set(args.only.split(",")) if args.only else None
+    results = [rag.run_case(c) for c in cases if not keep or c["id"] in keep]
+    meta = {"model": rag_data.model(), "today": today, "rag": True}
+    s = rag.summary(results)
+    print(rag.table(results, s, meta))
+    print(f"\nsaved: {report.save(results, s, meta, EVAL / 'results')}")
+    return 0
+
+
 def main(argv=None):
     args = parse_args(argv)
     if args.attacks and args.record:
         raise SystemExit("sensai.eval: --attacks runs on the snapshot, record it apart")
     today, snap = setup_env(args.record)
+    if args.rag:
+        return run_rag(args, today)
     try:
         cfg = load_config(args.config, model=args.model)
         client = OllamaClient(cfg["ollama"]["host"], cfg["ollama"].get("timeout", 120))
