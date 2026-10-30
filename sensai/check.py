@@ -24,7 +24,7 @@ import math
 from sensai.numbers import numbers, words
 
 # their results are text written by others, full of numbers that have nothing to do w/ the question
-TEXT_TOOLS = {"get_news", "web_search", "fetch"}
+TEXT_TOOLS = {"get_news", "search_news", "web_search", "fetch"}
 # sensai's own tools (loop.py), their args and results hold no data, the note would source itself
 LOCAL = {"plan", "update_note"}
 
