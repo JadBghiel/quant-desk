@@ -12,7 +12,7 @@ import time
 
 from sensai import check, note, react
 from sensai.react import Cleaner
-from sensai.ui import DIM, RESET, Spinner, check_block, file_link, inline_image, tool_line
+from sensai.ui import DIM, RESET, LineRenderer, Spinner, check_block, file_link, inline_image, tool_line
 
 
 def answer(session, out, tty, trace):
@@ -131,14 +131,25 @@ def stream_round(session, out, tty, tools, nudge=None):
 
     the spinner turns while nothing else is on screen: waiting for the 1st chunk, and the
     whole thinking phase when /think hides it, thinking stays out of the history
+    /pretty styles what is printed, content stays raw: the check, the history and the note read it
     nudge = 1 extra msg for this round, not kept
     """
     dim, reset = (DIM, RESET) if tty else ("", "")
     calls, stats, state = [], {}, None
     text = Cleaner()
+    view = LineRenderer() if session.pretty and tty else None
     messages = session.messages + ([nudge] if nudge else [])
     # cloud models can take seconds before the 1st chunk
     spinner = Spinner(out).start() if tty else None
+
+    def start_content():
+        nonlocal state
+        if spinner and spinner.running:
+            spinner.stop()
+        elif state == "thinking" and session.show_thinking:
+            out.write(reset + "\n\n")
+        state = "content"
+
     try:
         for kind, chunk in session.client.chat_stream(session.model, messages, tools):
             if kind == "thinking":
@@ -152,17 +163,29 @@ def stream_round(session, out, tty, tools, nudge=None):
             elif kind == "stats":
                 stats = chunk
             else:
-                if spinner and spinner.running:
-                    spinner.stop()
-                elif state == "thinking" and session.show_thinking:
-                    out.write(reset + "\n\n")
-                state = "content"
-                out.write(text.feed(chunk))
+                shown = text.feed(chunk)
+                shown = view.feed(shown) if view else shown
+                # w/ /pretty nothing prints until a line is complete, the spinner keeps turning until then
+                if shown or not view:
+                    start_content()
+                out.write(shown)
             out.flush()
+    except BaseException:
+        # error or Ctrl+C mid answer -> the line held stays on screen, like the raw mode
+        if spinner:
+            spinner.stop()
+        held = view.finish() if view else ""
+        if held:
+            start_content()
+            out.write(held)
+        raise
     finally:
         if spinner:
             spinner.stop()
     tail, content = text.finish()
+    tail = view.feed(tail) + view.finish() if view else tail
+    if tail and state != "content":
+        start_content()
     out.write(tail)
     if state == "thinking" and session.show_thinking:
         # thought then went straight to a tool call

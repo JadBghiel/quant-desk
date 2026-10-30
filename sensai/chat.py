@@ -34,7 +34,7 @@ def _now():
 class Session:
     def __init__(self, client, model, system_prompt=None, show_thinking=True, store=None,
                  profile=None, profile_path=None, hub=None, max_steps=12, token_budget=60000,
-                 show_trace=False, judge_model=None, notes=True, guard=True):
+                 show_trace=False, judge_model=None, notes=True, guard=True, pretty=False):
         self.client = client
         # ev1: /judge asks this model, the chat model when the cfg has none
         self.judge_model = judge_model or model
@@ -43,6 +43,8 @@ class Session:
         self.max_steps = max_steps
         self.token_budget = token_budget
         self.show_trace = show_trace
+        # /pretty: display only and not saved, the eval stays raw
+        self.pretty = pretty
         # m4: the update_note tool + its rule, off in the eval -> its scores stay comparable
         self.notes = notes
         # ev4: the rule on instructions inside tool results, off in the eval like the note
