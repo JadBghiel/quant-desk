@@ -38,6 +38,14 @@ mcp_servers:
   - name: web
     command: python
     args: [-m, sensai.servers.web]
+  # ours (#11): search_news, RAG over the news. embeddings on a local ollama, the cloud refuses them
+  # setup: ollama pull nomic-embed-text, w/o it the tool is off and the chat says so
+  - name: rag
+    command: python
+    args: [-m, sensai.servers.rag]
+    env:
+      SENSAI_EMBED_HOST: http://localhost:11434
+      SENSAI_EMBED_MODEL: nomic-embed-text
   # ours (#7): run_python, the model's code in docker (no network) or a limited subprocess
   # image: docker build -t sensai-sandbox sandbox/, plots + outputs in out/ ($SENSAI_OUT)
   - name: sandbox

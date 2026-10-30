@@ -186,6 +186,18 @@ def sandbox_warning(hub):
     return sandbox.isolation_warning() if up else ""
 
 
+def rag_warning(hub):
+    """the warning when the news search is off, its server is up w/o its tool"""
+    srv = hub.servers.get("rag") if hub else None
+    if srv and srv["status"] == "up" and not srv["tools"]:
+        return "[warning] search_news is off: it needs a local Ollama, start it and run: ollama pull nomic-embed-text"
+    return ""
+
+
+def tool_warnings(hub):
+    return [w for w in (sandbox_warning(hub), rag_warning(hub)) if w]
+
+
 def cmd_tools(session, arg):
     hub = session.hub
     if not hub or not hub.servers:
@@ -196,8 +208,7 @@ def cmd_tools(session, arg):
             print(f"{name}: {', '.join(srv['tools']) or '(no tools)'}")
         else:
             print(f"{name}: down, {srv['status']}")
-    warning = sandbox_warning(hub)
-    if warning:
+    for warning in tool_warnings(hub):
         print(warning)
 
 
