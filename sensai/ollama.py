@@ -92,6 +92,17 @@ class OllamaClient:
         hint = f", closest: {', '.join(close)}" if close else ""
         raise ModelNotFound(f"model {model} not available on {self.host}{hint} (/model to list them)")
 
+    def embed(self, model, texts):
+        """/api/embed -> 1 vector per text, the cloud refuses it, called on a local ollama (rag.py)"""
+        r = self._request("POST", "/api/embed", json={"model": model, "input": list(texts)})
+        try:
+            vectors = r.json()["embeddings"]
+        except (ValueError, KeyError, TypeError):
+            raise OllamaError("ollama sent something that isnt embeddings") from None
+        if len(vectors) != len(texts):
+            raise OllamaError(f"ollama sent {len(vectors)} embeddings for {len(texts)} texts")
+        return vectors
+
     def chat(self, model, messages, format=None, options=None):
         """1 call w/o streaming -> (content, stats), for the judge
         format = a JSON schema the reply should follow (structured outputs), the cloud doesnt
