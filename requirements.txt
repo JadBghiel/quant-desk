@@ -4,6 +4,7 @@ python-dotenv>=1.0
 mcp>=2.2
 yfinance>=1.7
 uv>=0.13
+numpy>=1.26
 # what the sandbox's code can import when it runs w/o docker, same as sandbox/Dockerfile
 scipy>=1.14
 statsmodels>=0.14
