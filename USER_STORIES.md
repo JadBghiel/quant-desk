@@ -11,7 +11,7 @@ The stories below come from 3 kinds of user:
 - **Research reviewer:** a colleague or portfolio manager who reads the work and has to be able to trust it.
 
 The examples use the default model, `gemma4:31b`, unless a story says otherwise. Models can answer differently from
-one run to the next, so the README gives the limits of each feature and the results of the attacks.
+one run to the next; the README gives the limits of each feature and the results of the attacks.
 
 | Feature | Stories |
 | ------- | ------- |
