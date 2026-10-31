@@ -6,7 +6,7 @@
 __pycache__/
 *.pyc
 
-# runtime output, anchored to the root so sensai/data/ (code) isnt ignored
+# runtime output, anchored to the root -> sensai/data/ (code) stays tracked
 /data/
 /out/
 /sessions/
